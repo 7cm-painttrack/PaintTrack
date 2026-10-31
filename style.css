@@ -1,0 +1,368 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Segoe UI", Arial, sans-serif;
+  background: #f4f6f9;
+  color: #2d3436;
+}
+
+.container {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  width: 250px;
+  background: #fff;
+  border-right: 1px solid #e3e7ee;
+  padding: 24px 16px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* logged-in user at the bottom of the sidebar */
+.user-box {
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid #e3e7ee;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.user-name { font-weight: 700; color: #0b1f4f; font-size: 15px; word-break: break-word; }
+.user-box .btn-secondary { width: 100%; margin-top: 4px; }
+
+/* role badges */
+.role-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef2fa;
+  color: #0b1f4f;
+}
+
+.role-badge.mother_admin { background: #0b1f4f; color: #fff; }
+.role-badge.admin { background: #f59e0b; color: #0b1f4f; }
+.role-badge.employee { background: #e3e7ee; color: #0b1f4f; }
+
+.status-active { color: #27ae60; font-weight: 700; }
+.status-disabled { color: #e74c3c; font-weight: 700; }
+
+/* ---------- Login / Setup ---------- */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-card .subtitle { margin-bottom: 4px; }
+
+.auth-logo {
+  height: 140px;
+  background-image: url("logo.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  margin-bottom: 6px;
+}
+
+.auth-button { width: 100%; margin-top: 6px; }
+
+.form-title { font-size: 18px; color: #0b1f4f; margin-bottom: 16px; }
+
+.role-guide { margin-top: 24px; max-width: 760px; display: flex; flex-direction: column; gap: 10px; }
+.role-guide h3 { font-size: 16px; color: #0b1f4f; }
+.role-guide p { font-size: 14px; color: #57606f; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* logo at the top of the sidebar (transparent background) */
+.brand {
+  padding: 0 4px 22px;
+  margin-bottom: 20px;
+  border-bottom: 3px solid #f59e0b;
+}
+
+.brand-logo {
+  width: 100%;
+  height: 130px;
+  background-image: url("logo.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.menu { display: flex; flex-direction: column; gap: 6px; }
+
+.nav-btn {
+  background: none;
+  border: none;
+  border-left: 4px solid transparent;
+  color: #0b1f4f;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nav-btn:hover { background: #eef2fa; }
+.nav-btn.active { background: #0b1f4f; color: #fff; border-left-color: #f59e0b; }
+
+/* ---------- Content ---------- */
+.content {
+  flex: 1;
+  padding: 32px;
+  overflow-x: auto;
+}
+
+.page { display: none; }
+.page.active { display: block; }
+
+h2 { font-size: 26px; margin-bottom: 4px; color: #0b1f4f; }
+.subtitle { color: #747d8c; margin-bottom: 24px; }
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+
+/* ---------- Dashboard ---------- */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 18px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-left: 6px solid #f59e0b;
+}
+
+.stat-card.total { border-left-color: #0b1f4f; }
+
+.stat-label { color: #747d8c; font-size: 14px; }
+.stat-value { font-size: 44px; font-weight: 700; color: #0b1f4f; }
+.stat-liters { font-size: 15px; font-weight: 600; color: #f59e0b; }
+.stat-range { font-size: 12px; color: #a4b0be; }
+
+/* dashboard tables */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 32px 0 12px;
+}
+
+.section-head h3 { font-size: 18px; color: #0b1f4f; }
+.section-note { font-size: 13px; color: #747d8c; }
+
+/* ---------- Form ---------- */
+.form { max-width: 760px; }
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field.full { grid-column: span 2; }
+
+label { font-size: 14px; font-weight: 600; }
+
+input[type="text"],
+input[type="number"],
+input[type="date"],
+input[type="email"],
+input[type="password"],
+select {
+  padding: 10px 12px;
+  border: 1px solid #ced6e0;
+  border-radius: 8px;
+  font-size: 15px;
+  font-family: inherit;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: #f59e0b;
+}
+
+.radio-group { display: flex; gap: 24px; flex-wrap: wrap; }
+.radio { font-weight: 400; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.radio input { accent-color: #f59e0b; width: 16px; height: 16px; }
+
+.btn-primary {
+  background: #f59e0b;
+  color: #0b1f4f;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-primary:hover { background: #d97706; }
+.btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+
+.message { margin-top: 14px; font-weight: 600; }
+.message.success { color: #27ae60; }
+.message.error { color: #e74c3c; }
+
+/* ---------- Records toolbar ---------- */
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btn-secondary {
+  background: #fff;
+  color: #0b1f4f;
+  border: 1px solid #ced6e0;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.btn-secondary:hover { background: #f1f2f6; }
+
+#cancelEditButton { margin-left: 8px; }
+
+.filter-info {
+  color: #747d8c;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+/* ---------- Records table ---------- */
+.list { padding: 0; overflow-x: auto; }
+
+table { width: 100%; border-collapse: collapse; }
+
+th, td {
+  padding: 14px 12px;
+  text-align: left;
+  font-size: 14px;
+  border-bottom: 1px solid #eef1f5;
+  white-space: nowrap;
+}
+
+th { background: #0b1f4f; color: #fff; font-weight: 600; }
+
+tbody tr:hover { background: #fafbfc; }
+
+.empty { text-align: center; color: #747d8c; padding: 32px; }
+
+.btn-delete {
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn-delete:hover { background: #c0392b; }
+
+.btn-edit {
+  background: #3498db;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  margin-right: 6px;
+}
+
+.btn-edit:hover { background: #2980b9; }
+
+.hidden { display: none !important; }
+
+/* ---------- Backup & Restore ---------- */
+.backup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  max-width: 900px;
+}
+
+.backup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.backup-card h3 { font-size: 18px; color: #0b1f4f; }
+.backup-card .field { width: 100%; }
+.backup-text { color: #57606f; font-size: 14px; line-height: 1.5; }
+.backup-text span { font-weight: 700; color: #0b1f4f; }
+
+input[type="file"] {
+  padding: 8px;
+  border: 1px dashed #ced6e0;
+  border-radius: 8px;
+  font-size: 14px;
+  width: 100%;
+}
+
+.radio-stack { display: flex; flex-direction: column; gap: 8px; }
+
+/* ---------- Mobile ---------- */
+@media (max-width: 768px) {
+  .container { flex-direction: column; }
+  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #e3e7ee; }
+  .brand-logo { height: 90px; }
+  .menu { flex-direction: row; flex-wrap: wrap; }
+  .user-box { margin-top: 16px; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .user-box .btn-secondary { width: auto; margin-top: 0; }
+  .content { padding: 20px 16px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .field.full { grid-column: span 1; }
+}
+
+.locked { font-size: 12px; color: #a4b0be; }
+.btn-small { padding: 6px 12px; font-size: 13px; margin-left: 6px; }
