@@ -351,17 +351,102 @@ input[type="file"] {
 
 .radio-stack { display: flex; flex-direction: column; gap: 8px; }
 
-/* ---------- Mobile ---------- */
+/* ---------- Navigation on different screen sizes ---------- */
+
+/* menu button is only used on phones */
+.menu-toggle {
+  display: none;
+  background: #0b1f4f;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+/* desktop: sidebar stays in place while the page scrolls */
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.content { min-width: 0; }
+
+/* very wide screens: keep pages from stretching too far */
+.page { max-width: 1400px; }
+
+/* tablets and small laptops */
+@media (max-width: 1024px) {
+  .sidebar { width: 210px; padding: 20px 12px; }
+  .brand-logo { height: 100px; }
+  .nav-btn { font-size: 14px; padding: 11px 12px; }
+  .content { padding: 24px; }
+}
+
+/* phones: compact top bar with a menu button */
 @media (max-width: 768px) {
   .container { flex-direction: column; }
-  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #e3e7ee; }
-  .brand-logo { height: 90px; }
-  .menu { flex-direction: row; flex-wrap: wrap; }
-  .user-box { margin-top: 16px; flex-direction: row; flex-wrap: wrap; align-items: center; }
-  .user-box .btn-secondary { width: auto; margin-top: 0; }
+
+  .sidebar {
+    width: 100%;
+    height: auto;
+    max-height: 100vh;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: 10px 16px;
+    border-right: none;
+    border-bottom: 1px solid #e3e7ee;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0;
+    margin: 0;
+    border-bottom: none;
+  }
+
+  .brand-logo {
+    width: 130px;
+    height: 52px;
+    background-position: left center;
+  }
+
+  .menu-toggle { display: block; }
+
+  /* menu and user box are hidden until the menu button is pressed */
+  .menu, .user-box { display: none; }
+
+  .sidebar.open .menu {
+    display: flex;
+    flex-direction: column;
+    margin-top: 12px;
+  }
+
+  .sidebar.open .user-box {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 12px;
+    padding: 12px 0 4px;
+  }
+
+  .user-box .btn-secondary { width: auto; margin-top: 0; margin-left: auto; }
+
   .content { padding: 20px 16px; }
   .form-grid { grid-template-columns: 1fr; }
   .field.full { grid-column: span 1; }
+  .stat-value { font-size: 36px; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .toolbar #pdfButton { width: 100%; }
 }
 
 .locked { font-size: 12px; color: #a4b0be; }

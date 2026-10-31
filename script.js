@@ -353,6 +353,23 @@ document.getElementById("accountsBtn").addEventListener("click", function() {
     showPage("accounts", "accountsBtn");
 });
 
+// ===== MENU BUTTON (phones) =====
+document.getElementById("menuToggle").addEventListener("click", function() {
+    let sidebar = document.querySelector(".sidebar");
+    sidebar.classList.toggle("open");
+
+    if (sidebar.classList.contains("open")) {
+        this.innerHTML = "&#10005;";   // X icon
+    } else {
+        this.innerHTML = "&#9776;";    // menu icon
+    }
+});
+
+function closeMenu() {
+    document.querySelector(".sidebar").classList.remove("open");
+    document.getElementById("menuToggle").innerHTML = "&#9776;";
+}
+
 function showPage(pageId, buttonId) {
     // block pages the role is not allowed to open
     if (currentUser != null) {
@@ -377,6 +394,10 @@ function showPage(pageId, buttonId) {
     // show selected page and button
     document.getElementById(pageId).classList.add("active");
     document.getElementById(buttonId).classList.add("active");
+
+    // on phones, close the menu and go back to the top
+    closeMenu();
+    window.scrollTo(0, 0);
 }
 
 
