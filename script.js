@@ -225,10 +225,14 @@ for (let i = 0; i < eyeButtons.length; i++) {
         let input = document.getElementById(this.dataset.target);
         if (input.type == "password") {
             input.type = "text";
-            this.textContent = "Hide";
+            this.classList.add("showing");          // crossed-out eye
+            this.title = "Hide password";
+            this.setAttribute("aria-label", "Hide password");
         } else {
             input.type = "password";
-            this.textContent = "Show";
+            this.classList.remove("showing");       // normal eye
+            this.title = "Show password";
+            this.setAttribute("aria-label", "Show password");
         }
     });
 }
@@ -237,7 +241,9 @@ for (let i = 0; i < eyeButtons.length; i++) {
 function hideAllPasswords() {
     for (let i = 0; i < eyeButtons.length; i++) {
         document.getElementById(eyeButtons[i].dataset.target).type = "password";
-        eyeButtons[i].textContent = "Show";
+        eyeButtons[i].classList.remove("showing");
+        eyeButtons[i].title = "Show password";
+        eyeButtons[i].setAttribute("aria-label", "Show password");
     }
 }
 
