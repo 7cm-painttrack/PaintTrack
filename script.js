@@ -75,6 +75,9 @@ function canEditRecord(record) {
     let today = new Date();
     return created.toDateString() == today.toDateString();
 }
+function canDownload() {        // PDF downloads
+    return currentUser.role == "mother_admin" || currentUser.role == "admin";
+}
 function canBackup() {
     return currentUser.role == "mother_admin" || currentUser.role == "admin";
 }
@@ -391,6 +394,12 @@ function startSystem() {
         document.getElementById("backupBtn").classList.remove("hidden");
     } else {
         document.getElementById("backupBtn").classList.add("hidden");
+    }
+
+    if (canDownload()) {
+        document.getElementById("pdfButton").classList.remove("hidden");
+    } else {
+        document.getElementById("pdfButton").classList.add("hidden");
     }
 
     if (canRestore()) {
@@ -987,6 +996,11 @@ function loadLogo() {
 loadLogo();
 
 function downloadPDF() {
+    if (!canDownload()) {
+        alert("Your account is not allowed to download files.");
+        return;
+    }
+
     if (shownRecords.length == 0) {
         alert("No records to download.");
         return;
