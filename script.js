@@ -827,9 +827,11 @@ function updateDashboard() {
 
 
 // ===== VIEW RECORDS (with start to end date filter) =====
-document.getElementById("viewButton").addEventListener("click", displayRecords);
+// the table updates as soon as a date is picked or changed
 document.getElementById("startDate").addEventListener("change", displayRecords);
 document.getElementById("endDate").addEventListener("change", displayRecords);
+document.getElementById("startDate").addEventListener("input", displayRecords);
+document.getElementById("endDate").addEventListener("input", displayRecords);
 
 document.getElementById("showAllButton").addEventListener("click", function() {
     document.getElementById("startDate").value = "";

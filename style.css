@@ -239,6 +239,10 @@ input:focus, select:focus {
 .message.error { color: #e74c3c; }
 
 /* ---------- Records toolbar ---------- */
+/* keeps each date label next to its box */
+.date-field { display: flex; align-items: center; gap: 8px; }
+.date-field label { white-space: nowrap; }
+
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -494,6 +498,9 @@ input[type="file"] {
   .field.full { grid-column: span 1; }
   .stat-value { font-size: 36px; }
   .toolbar { flex-direction: column; align-items: stretch; }
+  .filter { flex-direction: column; align-items: stretch; }
+  .date-field label { width: 90px; }
+  .date-field input { flex: 1; min-width: 0; }
   .toolbar #pdfButton { width: 100%; }
 }
 

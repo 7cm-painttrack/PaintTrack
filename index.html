@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PaintTrack</title>
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
@@ -282,11 +282,14 @@
 
         <div class="toolbar">
           <div class="filter">
-            <label for="startDate">Start Date:</label>
-            <input type="date" id="startDate">
-            <label for="endDate">End Date:</label>
-            <input type="date" id="endDate">
-            <button id="viewButton" class="btn-primary">View</button>
+            <div class="date-field">
+              <label for="startDate">Start Date:</label>
+              <input type="date" id="startDate">
+            </div>
+            <div class="date-field">
+              <label for="endDate">End Date:</label>
+              <input type="date" id="endDate">
+            </div>
             <button id="showAllButton" class="btn-secondary">Show All</button>
           </div>
           <button id="pdfButton" class="btn-primary">Download PDF</button>
@@ -481,6 +484,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
-  <script type="module" src="script.js?v=7"></script>
+  <script type="module" src="script.js?v=8"></script>
 </body>
 </html>
