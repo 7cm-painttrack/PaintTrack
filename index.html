@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PaintTrack</title>
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 
@@ -26,11 +26,34 @@
       </div>
       <div class="field">
         <label for="loginPassword">Password</label>
-        <input type="password" id="loginPassword" placeholder="Password">
+        <div class="password-wrap">
+          <input type="password" id="loginPassword" placeholder="Password">
+          <button class="eye-btn" data-target="loginPassword">Show</button>
+        </div>
       </div>
+
+      <button id="forgotLink" class="link-btn">Forgot password?</button>
 
       <button id="loginButton" class="btn-primary auth-button">Log In</button>
       <p id="loginMessage" class="message"></p>
+    </div>
+  </div>
+
+  <!-- FORGOT PASSWORD -->
+  <div id="forgotPage" class="auth-page hidden">
+    <div class="card auth-card">
+      <div class="auth-logo"></div>
+      <h2>Forgot Password</h2>
+      <p class="subtitle">Enter your account email. We will send you a link to create a new password.</p>
+
+      <div class="field">
+        <label for="forgotEmail">Email</label>
+        <input type="email" id="forgotEmail" placeholder="you@example.com">
+      </div>
+
+      <button id="sendResetButton" class="btn-primary auth-button">Send Reset Link</button>
+      <button id="backToLoginButton" class="btn-secondary auth-button">Back to Log In</button>
+      <p id="forgotMessage" class="message"></p>
     </div>
   </div>
 
@@ -51,11 +74,17 @@
       </div>
       <div class="field">
         <label for="setupPassword">Password</label>
-        <input type="password" id="setupPassword" placeholder="At least 6 characters">
+        <div class="password-wrap">
+          <input type="password" id="setupPassword" placeholder="At least 6 characters">
+          <button class="eye-btn" data-target="setupPassword">Show</button>
+        </div>
       </div>
       <div class="field">
         <label for="setupConfirm">Confirm Password</label>
-        <input type="password" id="setupConfirm" placeholder="Type the password again">
+        <div class="password-wrap">
+          <input type="password" id="setupConfirm" placeholder="Type the password again">
+          <button class="eye-btn" data-target="setupConfirm">Show</button>
+        </div>
       </div>
 
       <button id="setupButton" class="btn-primary auth-button">Create Mother Admin</button>
@@ -79,6 +108,7 @@
         <button class="nav-btn" id="recordsBtn">View Records</button>
         <button class="nav-btn" id="backupBtn">Backup &amp; Restore</button>
         <button class="nav-btn" id="accountsBtn">Accounts</button>
+        <button class="nav-btn" id="myAccountBtn">My Account</button>
       </div>
 
       <!-- logged-in user -->
@@ -361,7 +391,10 @@
             </div>
             <div class="field">
               <label for="accPassword">Password</label>
-              <input type="password" id="accPassword" placeholder="At least 6 characters">
+              <div class="password-wrap">
+                <input type="password" id="accPassword" placeholder="At least 6 characters">
+                <button class="eye-btn" data-target="accPassword">Show</button>
+              </div>
             </div>
           </div>
 
@@ -398,6 +431,49 @@
         </div>
       </section>
 
+      <!-- 7. MY ACCOUNT (every account type) -->
+      <section id="myaccount" class="page">
+        <h2>My Account</h2>
+        <p class="subtitle">Your account details and password</p>
+
+        <div class="card form profile-card">
+          <h3 class="form-title">Account Details</h3>
+          <p><span class="profile-label">Name</span> <span id="profileName"></span></p>
+          <p><span class="profile-label">Email</span> <span id="profileEmail"></span></p>
+          <p><span class="profile-label">Account Type</span> <span id="profileRole" class="role-badge"></span></p>
+        </div>
+
+        <div class="card form">
+          <h3 class="form-title">Create New Password</h3>
+          <div class="form-grid">
+            <div class="field full">
+              <label for="currentPassword">Current Password</label>
+              <div class="password-wrap">
+                <input type="password" id="currentPassword" placeholder="Your current password">
+                <button class="eye-btn" data-target="currentPassword">Show</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="newPassword">New Password</label>
+              <div class="password-wrap">
+                <input type="password" id="newPassword" placeholder="At least 6 characters">
+                <button class="eye-btn" data-target="newPassword">Show</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="confirmNewPassword">Confirm New Password</label>
+              <div class="password-wrap">
+                <input type="password" id="confirmNewPassword" placeholder="Type the new password again">
+                <button class="eye-btn" data-target="confirmNewPassword">Show</button>
+              </div>
+            </div>
+          </div>
+
+          <button id="changePasswordButton" class="btn-primary">Save New Password</button>
+          <p id="passwordMessage" class="message"></p>
+        </div>
+      </section>
+
     </div>
   </div>
 
@@ -405,6 +481,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
-  <script type="module" src="script.js?v=4"></script>
+  <script type="module" src="script.js?v=5"></script>
 </body>
 </html>

@@ -17,7 +17,11 @@ import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
     signOut,
-    onAuthStateChanged
+    onAuthStateChanged,
+    sendPasswordResetEmail,
+    updatePassword,
+    reauthenticateWithCredential,
+    EmailAuthProvider
 }
 from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
 
@@ -86,6 +90,7 @@ function showScreen(screenId) {
     document.getElementById("loadingPage").classList.add("hidden");
     document.getElementById("loginPage").classList.add("hidden");
     document.getElementById("setupPage").classList.add("hidden");
+    document.getElementById("forgotPage").classList.add("hidden");
     document.getElementById("appPage").classList.add("hidden");
     document.getElementById(screenId).classList.remove("hidden");
 }
@@ -172,6 +177,9 @@ function authErrorText(error) {
     if (error.code == "auth/weak-password") return "Password must be at least 6 characters.";
     if (error.code == "auth/too-many-requests") return "Too many attempts. Please wait a moment and try again.";
     if (error.code == "auth/operation-not-allowed") return "Email/Password sign-in is not enabled in Firebase.";
+    if (error.code == "auth/missing-email") return "Please enter your email.";
+    if (error.code == "auth/requires-recent-login") return "Please log out, log in again, and try once more.";
+    if (error.code == "auth/network-request-failed") return "No internet connection. Please try again.";
     return "Something went wrong: " + error.message;
 }
 
@@ -208,6 +216,74 @@ async function login() {
     button.disabled = false;
     button.textContent = "Log In";
 }
+
+
+// ===== SHOW / HIDE PASSWORD =====
+let eyeButtons = document.querySelectorAll(".eye-btn");
+for (let i = 0; i < eyeButtons.length; i++) {
+    eyeButtons[i].addEventListener("click", function() {
+        let input = document.getElementById(this.dataset.target);
+        if (input.type == "password") {
+            input.type = "text";
+            this.textContent = "Hide";
+        } else {
+            input.type = "password";
+            this.textContent = "Show";
+        }
+    });
+}
+
+// hides all passwords again (used after saving or logging out)
+function hideAllPasswords() {
+    for (let i = 0; i < eyeButtons.length; i++) {
+        document.getElementById(eyeButtons[i].dataset.target).type = "password";
+        eyeButtons[i].textContent = "Show";
+    }
+}
+
+
+// ===== FORGOT PASSWORD =====
+document.getElementById("forgotLink").addEventListener("click", function() {
+    // copy the email from the login form, if typed
+    document.getElementById("forgotEmail").value = document.getElementById("loginEmail").value.trim();
+    document.getElementById("forgotMessage").textContent = "";
+    showScreen("forgotPage");
+});
+
+document.getElementById("backToLoginButton").addEventListener("click", function() {
+    setLoginMessage("", "");
+    showScreen("loginPage");
+});
+
+document.getElementById("sendResetButton").addEventListener("click", async function() {
+    let email = document.getElementById("forgotEmail").value.trim();
+    let message = document.getElementById("forgotMessage");
+
+    if (email == "") {
+        message.textContent = "Please enter your email.";
+        message.className = "message error";
+        return;
+    }
+
+    let button = document.getElementById("sendResetButton");
+    button.disabled = true;
+    button.textContent = "Sending...";
+
+    try {
+        await sendPasswordResetEmail(auth, email);
+        message.textContent = "If an account uses this email, a reset link has been sent. " +
+            "Check your inbox and spam folder, then open the link to create a new password.";
+        message.className = "message success";
+    }
+    catch (error) {
+        console.error(error);
+        message.textContent = authErrorText(error);
+        message.className = "message error";
+    }
+
+    button.disabled = false;
+    button.textContent = "Send Reset Link";
+});
 
 
 // ===== FIRST-TIME SETUP (creates the Mother Admin) =====
@@ -280,6 +356,11 @@ document.getElementById("logoutButton").addEventListener("click", async function
         return;
     }
     await signOut(auth);
+    hideAllPasswords();
+    document.getElementById("currentPassword").value = "";
+    document.getElementById("newPassword").value = "";
+    document.getElementById("confirmNewPassword").value = "";
+    document.getElementById("passwordMessage").textContent = "";
     showPage("dashboard", "dashboardBtn");
 });
 
@@ -291,6 +372,13 @@ function startSystem() {
     let badge = document.getElementById("userRole");
     badge.textContent = roleName(currentUser.role);
     badge.className = "role-badge " + currentUser.role;
+
+    // My Account details
+    document.getElementById("profileName").textContent = currentUser.name;
+    document.getElementById("profileEmail").textContent = currentUser.email;
+    let profileBadge = document.getElementById("profileRole");
+    profileBadge.textContent = roleName(currentUser.role);
+    profileBadge.className = "role-badge " + currentUser.role;
 
     // show or hide menus based on the role
     if (canBackup()) {
@@ -352,6 +440,9 @@ document.getElementById("backupBtn").addEventListener("click", function() {
 document.getElementById("accountsBtn").addEventListener("click", function() {
     showPage("accounts", "accountsBtn");
 });
+document.getElementById("myAccountBtn").addEventListener("click", function() {
+    showPage("myaccount", "myAccountBtn");
+});
 
 // ===== MENU BUTTON (phones) =====
 document.getElementById("menuToggle").addEventListener("click", function() {
@@ -383,6 +474,7 @@ function showPage(pageId, buttonId) {
     document.getElementById("records").classList.remove("active");
     document.getElementById("backup").classList.remove("active");
     document.getElementById("accounts").classList.remove("active");
+    document.getElementById("myaccount").classList.remove("active");
 
     // remove active from all buttons
     document.getElementById("dashboardBtn").classList.remove("active");
@@ -390,6 +482,7 @@ function showPage(pageId, buttonId) {
     document.getElementById("recordsBtn").classList.remove("active");
     document.getElementById("backupBtn").classList.remove("active");
     document.getElementById("accountsBtn").classList.remove("active");
+    document.getElementById("myAccountBtn").classList.remove("active");
 
     // show selected page and button
     document.getElementById(pageId).classList.add("active");
@@ -1294,6 +1387,15 @@ async function loadAccounts() {
                 });
                 actionCell.appendChild(statusButton);
 
+                // send a password reset email to this account
+                let resetButton = document.createElement("button");
+                resetButton.textContent = "Reset Password";
+                resetButton.className = "btn-secondary btn-small";
+                resetButton.addEventListener("click", function() {
+                    sendAccountReset(account);
+                });
+                actionCell.appendChild(resetButton);
+
                 // Mother Admin can switch between Admin and Employee
                 if (currentUser.role == "mother_admin") {
                     let roleButton = document.createElement("button");
@@ -1365,6 +1467,90 @@ async function changeAccountRole(account) {
         console.error(error);
         setAccountMessage("Error updating the account.", "error");
     }
+}
+
+
+// sends a "create new password" email to an account the user manages
+async function sendAccountReset(account) {
+    if (!canChangeAccount(account)) {
+        return;
+    }
+    if (!confirm("Send a password reset link to " + account.email + "?")) {
+        return;
+    }
+
+    try {
+        await sendPasswordResetEmail(auth, account.email);
+        setAccountMessage("Password reset link sent to " + account.email + ".", "success");
+    }
+    catch (error) {
+        console.error(error);
+        setAccountMessage(authErrorText(error), "error");
+    }
+}
+
+
+// ===== MY ACCOUNT: CREATE NEW PASSWORD =====
+document.getElementById("changePasswordButton").addEventListener("click", changePassword);
+
+function setPasswordMessage(text, type) {
+    let message = document.getElementById("passwordMessage");
+    message.textContent = text;
+    message.className = "message " + type;
+}
+
+async function changePassword() {
+    let currentPassword = document.getElementById("currentPassword").value;
+    let newPassword = document.getElementById("newPassword").value;
+    let confirmNewPassword = document.getElementById("confirmNewPassword").value;
+
+    if (currentPassword == "" || newPassword == "" || confirmNewPassword == "") {
+        setPasswordMessage("Please complete all fields.", "error");
+        return;
+    }
+    if (newPassword.length < 6) {
+        setPasswordMessage("New password must be at least 6 characters.", "error");
+        return;
+    }
+    if (newPassword != confirmNewPassword) {
+        setPasswordMessage("New passwords do not match.", "error");
+        return;
+    }
+    if (newPassword == currentPassword) {
+        setPasswordMessage("New password must be different from the current password.", "error");
+        return;
+    }
+
+    let button = document.getElementById("changePasswordButton");
+    button.disabled = true;
+    button.textContent = "Saving...";
+
+    try {
+        let user = auth.currentUser;
+
+        // confirm the current password first (Firebase requires this)
+        let credential = EmailAuthProvider.credential(user.email, currentPassword);
+        await reauthenticateWithCredential(user, credential);
+
+        await updatePassword(user, newPassword);
+
+        setPasswordMessage("Your new password has been saved. Use it the next time you log in.", "success");
+        document.getElementById("currentPassword").value = "";
+        document.getElementById("newPassword").value = "";
+        document.getElementById("confirmNewPassword").value = "";
+        hideAllPasswords();
+    }
+    catch (error) {
+        console.error(error);
+        if (error.code == "auth/invalid-credential" || error.code == "auth/wrong-password") {
+            setPasswordMessage("Your current password is wrong.", "error");
+        } else {
+            setPasswordMessage(authErrorText(error), "error");
+        }
+    }
+
+    button.disabled = false;
+    button.textContent = "Save New Password";
 }
 
 

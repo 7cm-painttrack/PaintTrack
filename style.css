@@ -351,6 +351,46 @@ input[type="file"] {
 
 .radio-stack { display: flex; flex-direction: column; gap: 8px; }
 
+/* ---------- Passwords ---------- */
+/* password box with a Show/Hide button */
+.password-wrap { display: flex; gap: 8px; width: 100%; }
+.password-wrap input { flex: 1; min-width: 0; }
+
+.eye-btn {
+  background: #fff;
+  color: #0b1f4f;
+  border: 1px solid #ced6e0;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 64px;
+}
+
+.eye-btn:hover { background: #eef2fa; }
+
+/* "Forgot password?" text button */
+.link-btn {
+  background: none;
+  border: none;
+  color: #0b1f4f;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  align-self: flex-end;
+  padding: 0;
+}
+
+.link-btn:hover { color: #d97706; }
+
+/* My Account details */
+.profile-card { margin-bottom: 20px; display: flex; flex-direction: column; gap: 10px; }
+.profile-card .form-title { margin-bottom: 6px; }
+.profile-card p { font-size: 15px; color: #2d3436; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.profile-label { width: 120px; color: #747d8c; font-size: 14px; }
+
 /* ---------- Navigation on different screen sizes ---------- */
 
 /* menu button is only used on phones */
