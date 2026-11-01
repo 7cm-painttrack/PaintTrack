@@ -530,7 +530,13 @@ function clearForm() {
     document.getElementById("color").value = "";
     document.getElementById("quantity").value = "";
     document.getElementById("productionDate").value = "";
-    document.getElementById("producedBy").value = "";
+
+    // Produced By is always the logged-in account
+    if (currentUser != null) {
+        document.getElementById("producedBy").value = currentUser.name;
+    } else {
+        document.getElementById("producedBy").value = "";
+    }
 
     let radios = document.getElementsByName("finish");
     for (let i = 0; i < radios.length; i++) {
@@ -562,7 +568,12 @@ async function saveData() {
     let color = document.getElementById("color").value;
     let quantity = document.getElementById("quantity").value;
     let productionDate = document.getElementById("productionDate").value;
-    let producedBy = document.getElementById("producedBy").value;
+    // Produced By comes from the logged-in account.
+    // When editing, it stays as the person who first produced the record.
+    let producedBy = currentUser.name;
+    if (editingId != "" && editingRecord != null) {
+        producedBy = editingRecord.producedBy;
+    }
 
     // get the selected radio button
     let finish = "";
