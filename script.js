@@ -137,6 +137,7 @@ onAuthStateChanged(auth, async function(user) {
     if (user == null) {
         stopWatchingAccount();
         stopRecordsWatch();
+        stopCounterWatch();
         currentUser = null;
         await showLoginOrSetup();
         return;
@@ -504,6 +505,7 @@ function startSystem() {
     showScreen("appPage");
 
     watchRecords();
+    watchBatchCounter();
     if (canManageAccounts()) {
         loadAccounts();
     }
@@ -602,10 +604,43 @@ setInterval(function() {
 }, 60000);   // checks once a minute
 
 
-// ===== BATCH NUMBER (made by the system) =====
-// finds the highest BATCH-### number saved so far and adds 1
-// e.g. BATCH-024 is the highest -> the next one is BATCH-025
-function nextBatchNumber() {
+// ===== BATCH NUMBER (made by the system, never reused) =====
+// Firestore keeps a counter, Settings/batchCounter = { last: 25 },
+// holding the highest batch number EVER given out. It only goes up,
+// so a deleted batch's number is never given to a different product.
+let batchCounter = 0;            // the counter's latest value
+let stopWatchingCounter = null;
+
+// keeps batchCounter up to date while the system is open
+function watchBatchCounter() {
+    stopCounterWatch();
+    stopWatchingCounter = onSnapshot(doc(db, "Settings", "batchCounter"), function(counterDoc) {
+        if (counterDoc.exists()) {
+            batchCounter = Number(counterDoc.data().last) || 0;
+        } else {
+            batchCounter = 0;
+        }
+        showNextBatch();
+    }, function(error) {
+        console.error(error);
+    });
+}
+
+function stopCounterWatch() {
+    if (stopWatchingCounter != null) {
+        stopWatchingCounter();
+        stopWatchingCounter = null;
+    }
+}
+
+// turns 25 into "BATCH-025"
+function batchText(number) {
+    return "BATCH-" + String(number).padStart(3, "0");
+}
+
+// highest BATCH-### among the records that still exist
+// (covers records saved before the counter existed, or restored from a backup)
+function highestSavedBatch() {
     let highest = 0;
     for (let i = 0; i < allRecords.length; i++) {
         let match = String(allRecords[i].batchNo).match(/^BATCH-(\d+)$/i);
@@ -613,7 +648,13 @@ function nextBatchNumber() {
             highest = Number(match[1]);
         }
     }
-    return "BATCH-" + String(highest + 1).padStart(3, "0");
+    return highest;
+}
+
+// the number the next new batch will get (shown in the form)
+function nextBatchNumber() {
+    let last = Math.max(batchCounter, highestSavedBatch());
+    return batchText(last + 1);
 }
 
 // shows the next batch number in the form (only when adding, not editing)
@@ -766,35 +807,43 @@ async function saveData() {
             record.recordedByUid = currentUser.uid;
             record.createdAt = new Date().toISOString();
 
-            // the batch number is also the record's ID in Firestore.
-            // A transaction checks that the ID is free and saves in one step,
-            // so two people saving at the same second can never get the same number.
-            // If the number was just taken, try the next one (up to 10 times).
-            let saved = false;
-            for (let tries = 0; tries < 10 && !saved; tries++) {
-                record.batchNo = batchNo;
-                let batchRef = doc(db, "Productions", batchNo);
+            // Get the batch number and save the record in ONE transaction:
+            // 1. read the counter (highest number ever given out)
+            // 2. next number = counter + 1, skipping any number still in use
+            // 3. save the record under that number and move the counter up
+            // If two people save at the same moment, Firestore runs one
+            // transaction after the other, so both get different numbers.
+            let counterRef = doc(db, "Settings", "batchCounter");
+            let savedNumber = "";
 
-                saved = await runTransaction(db, async function(transaction) {
-                    let existing = await transaction.get(batchRef);
-                    if (existing.exists()) {
-                        return false;      // taken by someone else
-                    }
-                    transaction.set(batchRef, record);
-                    return true;
-                });
-
-                if (!saved) {
-                    let number = Number(batchNo.replace(/^BATCH-/i, "")) + 1;
-                    batchNo = "BATCH-" + String(number).padStart(3, "0");
+            await runTransaction(db, async function(transaction) {
+                let counterDoc = await transaction.get(counterRef);
+                let last = highestSavedBatch();
+                if (counterDoc.exists() && Number(counterDoc.data().last) > last) {
+                    last = Number(counterDoc.data().last);
                 }
-            }
 
-            if (!saved) {
-                showMessage("Could not get a free batch number. Please try again.", "error");
-                unlockSaveButton();
-                return;
-            }
+                let number = last + 1;
+                let batchRef = doc(db, "Productions", batchText(number));
+                let existing = await transaction.get(batchRef);
+                let tries = 0;
+                while (existing.exists() && tries < 20) {
+                    number++;
+                    batchRef = doc(db, "Productions", batchText(number));
+                    existing = await transaction.get(batchRef);
+                    tries++;
+                }
+                if (existing.exists()) {
+                    throw new Error("No free batch number found");
+                }
+
+                record.batchNo = batchText(number);
+                transaction.set(batchRef, record);
+                transaction.set(counterRef, { last: number });
+                savedNumber = record.batchNo;
+            });
+
+            batchNo = savedNumber;
             showMessage("Production record " + batchNo + " saved successfully!", "success");
         } else {
             // update the record being edited
@@ -814,7 +863,11 @@ async function saveData() {
     }
     catch (error) {
         console.error(error);
-        showMessage("Error saving record. Check firebase setting and database", "error");
+        if (error.code == "permission-denied") {
+            showMessage("Saving was blocked by the Firestore rules. Add the Settings rule in Firebase.", "error");
+        } else {
+            showMessage("Error saving record. Check firebase setting and database", "error");
+        }
     }
 
     unlockSaveButton();
