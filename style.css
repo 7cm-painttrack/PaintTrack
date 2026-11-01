@@ -365,6 +365,23 @@ input[type="file"] {
 
 .radio-stack { display: flex; flex-direction: column; gap: 8px; }
 
+/* automatic daily backups list */
+.auto-backup-card {
+  margin-top: 20px;
+  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auto-backup-card h3 { font-size: 18px; color: #0b1f4f; }
+
+.table-scroll {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #eef1f5;
+}
+
 /* ---------- Passwords ---------- */
 /* password box with a Show/Hide button */
 .password-wrap { display: flex; gap: 8px; width: 100%; }

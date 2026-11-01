@@ -138,6 +138,7 @@ onAuthStateChanged(auth, async function(user) {
         stopWatchingAccount();
         stopRecordsWatch();
         stopCounterWatch();
+        stopBackupsWatch();
         currentUser = null;
         await showLoginOrSetup();
         return;
@@ -476,8 +477,10 @@ function startSystem() {
 
     if (canRestore()) {
         document.getElementById("restoreCard").classList.remove("hidden");
+        document.getElementById("autoRestoreNote").classList.remove("hidden");
     } else {
         document.getElementById("restoreCard").classList.add("hidden");
+        document.getElementById("autoRestoreNote").classList.add("hidden");
     }
 
     if (canManageAccounts()) {
@@ -506,6 +509,8 @@ function startSystem() {
 
     watchRecords();
     watchBatchCounter();
+    watchDailyBackups();
+    runDailyBackup();       // catch up if no one was online at midnight
     if (canManageAccounts()) {
         loadAccounts();
     }
@@ -600,6 +605,7 @@ setInterval(function() {
         document.getElementById("productionDate").max = shownDay;
         updateDashboard();
         displayRecords();
+        runDailyBackup();   // 12 midnight: back up the day that just ended
     }
 }, 60000);   // checks once a minute
 
@@ -1371,6 +1377,35 @@ function downloadPDF() {
 // ===== BACKUP =====
 document.getElementById("backupButton").addEventListener("click", downloadBackup);
 
+// one record as it is kept in a backup (without the Firestore id)
+function backupCopy(r) {
+    return {
+        batchNo: r.batchNo,
+        productName: r.productName,
+        paintType: r.paintType,
+        color: r.color,
+        finish: r.finish,
+        quantity: r.quantity,
+        productionDate: r.productionDate,
+        producedBy: r.producedBy,
+        recordedBy: r.recordedBy || "",
+        recordedByUid: r.recordedByUid || "",
+        createdAt: r.createdAt || "",
+        lastEditedBy: r.lastEditedBy || ""
+    };
+}
+
+// turns a backup into a .json file and downloads it
+function saveJsonFile(backup, fileName) {
+    let text = JSON.stringify(backup, null, 2);
+    let file = new Blob([text], { type: "application/json" });
+    let link = document.createElement("a");
+    link.href = URL.createObjectURL(file);
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
 function downloadBackup() {
     let message = document.getElementById("backupMessage");
 
@@ -1384,24 +1419,9 @@ function downloadBackup() {
         return;
     }
 
-    // copy the records without the Firestore id
     let records = [];
     for (let i = 0; i < allRecords.length; i++) {
-        let r = allRecords[i];
-        records.push({
-            batchNo: r.batchNo,
-            productName: r.productName,
-            paintType: r.paintType,
-            color: r.color,
-            finish: r.finish,
-            quantity: r.quantity,
-            productionDate: r.productionDate,
-            producedBy: r.producedBy,
-            recordedBy: r.recordedBy || "",
-            recordedByUid: r.recordedByUid || "",
-            createdAt: r.createdAt || "",
-            lastEditedBy: r.lastEditedBy || ""
-        });
+        records.push(backupCopy(allRecords[i]));
     }
 
     let backup = {
@@ -1411,46 +1431,33 @@ function downloadBackup() {
         records: records
     };
 
-    // turn the backup into a file and download it
-    let text = JSON.stringify(backup, null, 2);
-    let file = new Blob([text], { type: "application/json" });
-    let link = document.createElement("a");
-    link.href = URL.createObjectURL(file);
-
-    let today = new Date();
-    let dateText = today.getFullYear() + "-" +
-        String(today.getMonth() + 1).padStart(2, "0") + "-" +
-        String(today.getDate()).padStart(2, "0");
-    link.download = "painttrack-backup-" + dateText + ".json";
-
-    link.click();
-    URL.revokeObjectURL(link.href);
+    saveJsonFile(backup, "painttrack-backup-" + todayText() + ".json");
 
     message.textContent = "Backup downloaded (" + records.length + " records).";
     message.className = "message success";
 }
 
 
-// ===== RESTORE =====
+// ===== RESTORE (from a file) =====
 document.getElementById("restoreButton").addEventListener("click", restoreBackup);
 
-function restoreBackup() {
+function setRestoreMessage(text, type) {
     let message = document.getElementById("restoreMessage");
+    message.textContent = text;
+    message.className = "message " + type;
+}
 
+function restoreBackup() {
     if (!canRestore()) {
-        message.textContent = "Only the Mother Admin can restore backups.";
-        message.className = "message error";
+        setRestoreMessage("Only the Mother Admin can restore backups.", "error");
         return;
     }
     let fileInput = document.getElementById("restoreFile");
 
     if (fileInput.files.length == 0) {
-        message.textContent = "Please choose a backup file first.";
-        message.className = "message error";
+        setRestoreMessage("Please choose a backup file first.", "error");
         return;
     }
-
-    let mode = document.querySelector('input[name="restoreMode"]:checked').value;
 
     // read the file
     let reader = new FileReader();
@@ -1462,119 +1469,321 @@ function restoreBackup() {
             backup = JSON.parse(reader.result);
         }
         catch (error) {
-            message.textContent = "This file is not a valid backup file.";
-            message.className = "message error";
+            setRestoreMessage("This file is not a valid backup file.", "error");
             return;
         }
 
         if (backup.system != "PaintTrack" || !Array.isArray(backup.records)) {
-            message.textContent = "This file is not a PaintTrack backup.";
-            message.className = "message error";
+            setRestoreMessage("This file is not a PaintTrack backup.", "error");
             return;
         }
 
-        if (mode == "replace") {
-            let ok = confirm("This will DELETE all " + allRecords.length +
-                " current records and replace them with " + backup.records.length +
-                " records from the backup. A safety backup of the current records " +
-                "will be downloaded first. Continue?");
-            if (!ok) {
-                return;
-            }
-
-            // safety net: save the current records before deleting them
-            if (allRecords.length > 0) {
-                downloadBackup();
-            }
-        }
-
-        let restoreButton = document.getElementById("restoreButton");
-        restoreButton.disabled = true;
-        restoreButton.textContent = "Restoring...";
-        message.textContent = "Restoring records, please wait...";
-        message.className = "message";
-
-        try {
-            // batch numbers that already exist
-            let usedBatches = [];
-
-            if (mode == "replace") {
-                // delete all current records first
-                for (let i = 0; i < allRecords.length; i++) {
-                    await deleteDoc(doc(db, "Productions", allRecords[i].id));
-                }
-            } else {
-                for (let i = 0; i < allRecords.length; i++) {
-                    usedBatches.push(String(allRecords[i].batchNo).toLowerCase());
-                }
-            }
-
-            let added = 0, skipped = 0, invalid = 0;
-
-            for (let i = 0; i < backup.records.length; i++) {
-                let r = backup.records[i];
-
-                // skip records with missing information
-                if (!r.batchNo || !r.productName || !r.paintType || !r.color ||
-                    !r.finish || !r.productionDate || !r.producedBy || !(Number(r.quantity) > 0)) {
-                    invalid++;
-                    continue;
-                }
-
-                // skip batch numbers that already exist
-                let batch = String(r.batchNo).trim().toLowerCase();
-                if (usedBatches.includes(batch)) {
-                    skipped++;
-                    continue;
-                }
-
-                let restored = {
-                    batchNo: String(r.batchNo).trim(),
-                    productName: String(r.productName).trim(),
-                    paintType: r.paintType,
-                    color: String(r.color).trim(),
-                    finish: r.finish,
-                    quantity: Number(r.quantity),
-                    productionDate: String(r.productionDate).trim(),
-                    producedBy: String(r.producedBy).trim(),
-                    // keep who entered it and when (older backups may not have these)
-                    recordedBy: r.recordedBy ? String(r.recordedBy) : "Restored from backup",
-                    recordedByUid: r.recordedByUid ? String(r.recordedByUid) : "",
-                    createdAt: r.createdAt ? String(r.createdAt) : new Date().toISOString(),
-                    restoredBy: currentUser.name
-                };
-                if (r.lastEditedBy) {
-                    restored.lastEditedBy = String(r.lastEditedBy);
-                }
-
-                await addDoc(collection(db, "Productions"), restored);
-                usedBatches.push(batch);
-                added++;
-            }
-
-            let result = "Restore complete: " + added + " added";
-            if (skipped > 0) {
-                result += ", " + skipped + " skipped (batch already exists)";
-            }
-            if (invalid > 0) {
-                result += ", " + invalid + " skipped (incomplete)";
-            }
-            message.textContent = result + ".";
-            message.className = "message success";
+        let done = await restoreRecords(backup.records);
+        if (done) {
             fileInput.value = "";
         }
-        catch (error) {
-            console.error(error);
-            message.textContent = "Error restoring records. Check firebase setting and database";
-            message.className = "message error";
-        }
-
-        restoreButton.disabled = false;
-        restoreButton.textContent = "Restore Backup";
-        loadRecords();
     };
 
     reader.readAsText(fileInput.files[0]);
+}
+
+// puts a list of backup records back into Firestore,
+// using the Restore Option picked on the Restore card.
+// Used by the file restore and by the automatic daily backups.
+async function restoreRecords(backupRecords) {
+    if (!canRestore()) {
+        setRestoreMessage("Only the Mother Admin can restore backups.", "error");
+        return false;
+    }
+
+    let mode = document.querySelector('input[name="restoreMode"]:checked').value;
+
+    if (mode == "replace") {
+        let ok = confirm("This will DELETE all " + allRecords.length +
+            " current records and replace them with " + backupRecords.length +
+            " records from the backup. A safety backup of the current records " +
+            "will be downloaded first. Continue?");
+        if (!ok) {
+            return false;
+        }
+
+        // safety net: save the current records before deleting them
+        if (allRecords.length > 0) {
+            downloadBackup();
+        }
+    } else {
+        let ok = confirm("Add the records from this backup that are missing now (" +
+            backupRecords.length + " records in the backup)?");
+        if (!ok) {
+            return false;
+        }
+    }
+
+    let restoreButton = document.getElementById("restoreButton");
+    restoreButton.disabled = true;
+    restoreButton.textContent = "Restoring...";
+    setRestoreMessage("Restoring records, please wait...", "");
+
+    let done = false;
+
+    try {
+        // batch numbers that already exist
+        let usedBatches = [];
+
+        if (mode == "replace") {
+            // delete all current records first
+            for (let i = 0; i < allRecords.length; i++) {
+                await deleteDoc(doc(db, "Productions", allRecords[i].id));
+            }
+        } else {
+            for (let i = 0; i < allRecords.length; i++) {
+                usedBatches.push(String(allRecords[i].batchNo).toLowerCase());
+            }
+        }
+
+        let added = 0, skipped = 0, invalid = 0;
+
+        for (let i = 0; i < backupRecords.length; i++) {
+            let r = backupRecords[i];
+
+            // skip records with missing information
+            if (!r.batchNo || !r.productName || !r.paintType || !r.color ||
+                !r.finish || !r.productionDate || !r.producedBy || !(Number(r.quantity) > 0)) {
+                invalid++;
+                continue;
+            }
+
+            // skip batch numbers that already exist
+            let batch = String(r.batchNo).trim().toLowerCase();
+            if (usedBatches.includes(batch)) {
+                skipped++;
+                continue;
+            }
+
+            let restored = {
+                batchNo: String(r.batchNo).trim(),
+                productName: String(r.productName).trim(),
+                paintType: r.paintType,
+                color: String(r.color).trim(),
+                finish: r.finish,
+                quantity: Number(r.quantity),
+                productionDate: String(r.productionDate).trim(),
+                producedBy: String(r.producedBy).trim(),
+                // keep who entered it and when (older backups may not have these)
+                recordedBy: r.recordedBy ? String(r.recordedBy) : "Restored from backup",
+                recordedByUid: r.recordedByUid ? String(r.recordedByUid) : "",
+                createdAt: r.createdAt ? String(r.createdAt) : new Date().toISOString(),
+                restoredBy: currentUser.name
+            };
+            if (r.lastEditedBy) {
+                restored.lastEditedBy = String(r.lastEditedBy);
+            }
+
+            await addDoc(collection(db, "Productions"), restored);
+            usedBatches.push(batch);
+            added++;
+        }
+
+        let result = "Restore complete: " + added + " added";
+        if (skipped > 0) {
+            result += ", " + skipped + " skipped (batch already exists)";
+        }
+        if (invalid > 0) {
+            result += ", " + invalid + " skipped (incomplete)";
+        }
+        setRestoreMessage(result + ".", "success");
+        done = true;
+    }
+    catch (error) {
+        console.error(error);
+        setRestoreMessage("Error restoring records. Check firebase setting and database", "error");
+    }
+
+    restoreButton.disabled = false;
+    restoreButton.textContent = "Restore Backup";
+    loadRecords();
+    return done;
+}
+
+
+// ===== AUTOMATIC DAILY BACKUP =====
+// Every night at 12 midnight, PaintTrack saves a copy of all records
+// online, in the Firestore "Backups" collection, one document per day.
+// - It runs in any open PaintTrack page (any account type).
+// - If no page was open at midnight, the first person who opens
+//   PaintTrack the next day makes that backup.
+// - Only ONE backup per day is saved, even if many pages are open
+//   (a transaction checks that the day's backup does not exist yet).
+// - The last 30 daily backups are kept; older ones are removed.
+const KEEP_BACKUPS = 30;
+
+// yesterday's date as "YYYY-MM-DD" (the day that just ended at midnight)
+function yesterdayText() {
+    let day = new Date();
+    day.setDate(day.getDate() - 1);
+    return day.getFullYear() + "-" +
+        String(day.getMonth() + 1).padStart(2, "0") + "-" +
+        String(day.getDate()).padStart(2, "0");
+}
+
+async function runDailyBackup() {
+    if (currentUser == null) {
+        return;
+    }
+
+    let backupDay = yesterdayText();
+    let backupRef = doc(db, "Backups", backupDay);
+
+    try {
+        // quick check first: already backed up today? then nothing to do
+        let existing = await getDoc(backupRef);
+        if (existing.exists()) {
+            return;
+        }
+
+        // fresh copy of every record
+        let snapshot = await getDocs(collection(db, "Productions"));
+        let records = [];
+        snapshot.forEach(function(record) {
+            records.push(backupCopy(record.data()));
+        });
+
+        if (records.length == 0) {
+            return;     // nothing to back up yet
+        }
+
+        // a Firestore document can hold about 1 MB
+        if (JSON.stringify(records).length > 900000) {
+            console.log("Automatic backup skipped: too many records for one backup. Use Download Backup.");
+            return;
+        }
+
+        let made = await runTransaction(db, async function(transaction) {
+            let again = await transaction.get(backupRef);
+            if (again.exists()) {
+                return false;   // another open page made it a moment ago
+            }
+            transaction.set(backupRef, {
+                system: "PaintTrack",
+                backupOf: backupDay,
+                madeAt: new Date().toISOString(),
+                madeBy: currentUser.name,
+                totalRecords: records.length,
+                records: records
+            });
+            return true;
+        });
+
+        if (made) {
+            await removeOldBackups();
+        }
+    }
+    catch (error) {
+        console.error("Automatic backup failed:", error);
+    }
+}
+
+// keeps only the newest 30 daily backups
+async function removeOldBackups() {
+    let snapshot = await getDocs(collection(db, "Backups"));
+    let days = [];
+    snapshot.forEach(function(backupDoc) {
+        days.push(backupDoc.id);
+    });
+
+    days.sort();        // "YYYY-MM-DD" sorts oldest first
+    days.reverse();     // newest first
+
+    for (let i = KEEP_BACKUPS; i < days.length; i++) {
+        await deleteDoc(doc(db, "Backups", days[i]));
+    }
+}
+
+
+// ===== AUTOMATIC BACKUP LIST (Backup & Restore page) =====
+let dailyBackups = [];
+let stopWatchingBackups = null;
+
+// keeps the list live for Mother Admins and Admins
+function watchDailyBackups() {
+    stopBackupsWatch();
+    if (!canBackup()) {
+        return;
+    }
+    stopWatchingBackups = onSnapshot(collection(db, "Backups"), function(snapshot) {
+        dailyBackups = [];
+        snapshot.forEach(function(backupDoc) {
+            let data = backupDoc.data();
+            data.id = backupDoc.id;
+            dailyBackups.push(data);
+        });
+        // newest first
+        dailyBackups.sort(function(a, b) {
+            if (a.id < b.id) return 1;
+            if (a.id > b.id) return -1;
+            return 0;
+        });
+        showDailyBackups();
+    }, function(error) {
+        console.error(error);
+        document.getElementById("autoBackupList").innerHTML =
+            "<tr><td colspan='5' class='empty'>Cannot load the daily backups. Check the Firestore rules.</td></tr>";
+    });
+}
+
+function stopBackupsWatch() {
+    if (stopWatchingBackups != null) {
+        stopWatchingBackups();
+        stopWatchingBackups = null;
+    }
+}
+
+function showDailyBackups() {
+    let table = document.getElementById("autoBackupList");
+    table.innerHTML = "";
+
+    if (dailyBackups.length == 0) {
+        table.innerHTML = "<tr><td colspan='5' class='empty'>No daily backups yet. The first one is made at 12 midnight.</td></tr>";
+        return;
+    }
+
+    for (let i = 0; i < dailyBackups.length; i++) {
+        let b = dailyBackups[i];
+        let row = document.createElement("tr");
+        row.innerHTML =
+            "<td>" + safe(b.backupOf || b.id) + "</td>" +
+            "<td>" + safe(b.totalRecords) + "</td>" +
+            "<td>" + safe(new Date(b.madeAt).toLocaleString()) + "</td>" +
+            "<td>" + safe(b.madeBy) + "</td>";
+
+        let actionCell = document.createElement("td");
+
+        let downloadButton = document.createElement("button");
+        downloadButton.textContent = "Download";
+        downloadButton.className = "btn-edit";
+        downloadButton.addEventListener("click", function() {
+            saveJsonFile({
+                system: "PaintTrack",
+                backupDate: new Date(b.madeAt).toLocaleString(),
+                totalRecords: b.totalRecords,
+                records: b.records
+            }, "painttrack-backup-" + (b.backupOf || b.id) + ".json");
+        });
+        actionCell.appendChild(downloadButton);
+
+        if (canRestore()) {
+            let restoreButton = document.createElement("button");
+            restoreButton.textContent = "Restore";
+            restoreButton.className = "btn-secondary btn-small";
+            restoreButton.addEventListener("click", function() {
+                restoreRecords(b.records);
+            });
+            actionCell.appendChild(restoreButton);
+        }
+
+        row.appendChild(actionCell);
+        table.appendChild(row);
+    }
 }
 
 
