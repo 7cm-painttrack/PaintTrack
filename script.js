@@ -8,6 +8,7 @@ import {
     getDoc,
     setDoc,
     onSnapshot,
+    runTransaction,
     deleteDoc,
     updateDoc,
     doc
@@ -135,6 +136,7 @@ onAuthStateChanged(auth, async function(user) {
 
     if (user == null) {
         stopWatchingAccount();
+        stopRecordsWatch();
         currentUser = null;
         await showLoginOrSetup();
         return;
@@ -501,7 +503,7 @@ function startSystem() {
     showPage("dashboard", "dashboardBtn");
     showScreen("appPage");
 
-    loadRecords();
+    watchRecords();
     if (canManageAccounts()) {
         loadAccounts();
     }
@@ -583,6 +585,21 @@ function showPage(pageId, buttonId) {
     closeMenu();
     window.scrollTo(0, 0);
 }
+
+
+// ===== NEW DAY CHECK =====
+// if the page is left open past midnight, "today" moves to the new day:
+// the Today card and table, the date picker limit, and employees' Edit buttons
+let shownDay = todayText();
+
+setInterval(function() {
+    if (currentUser != null && todayText() != shownDay) {
+        shownDay = todayText();
+        document.getElementById("productionDate").max = shownDay;
+        updateDashboard();
+        displayRecords();
+    }
+}, 60000);   // checks once a minute
 
 
 // ===== BATCH NUMBER (made by the system) =====
@@ -748,7 +765,36 @@ async function saveData() {
             record.recordedBy = currentUser.name;
             record.recordedByUid = currentUser.uid;
             record.createdAt = new Date().toISOString();
-            await addDoc(collection(db, "Productions"), record);
+
+            // the batch number is also the record's ID in Firestore.
+            // A transaction checks that the ID is free and saves in one step,
+            // so two people saving at the same second can never get the same number.
+            // If the number was just taken, try the next one (up to 10 times).
+            let saved = false;
+            for (let tries = 0; tries < 10 && !saved; tries++) {
+                record.batchNo = batchNo;
+                let batchRef = doc(db, "Productions", batchNo);
+
+                saved = await runTransaction(db, async function(transaction) {
+                    let existing = await transaction.get(batchRef);
+                    if (existing.exists()) {
+                        return false;      // taken by someone else
+                    }
+                    transaction.set(batchRef, record);
+                    return true;
+                });
+
+                if (!saved) {
+                    let number = Number(batchNo.replace(/^BATCH-/i, "")) + 1;
+                    batchNo = "BATCH-" + String(number).padStart(3, "0");
+                }
+            }
+
+            if (!saved) {
+                showMessage("Could not get a free batch number. Please try again.", "error");
+                unlockSaveButton();
+                return;
+            }
             showMessage("Production record " + batchNo + " saved successfully!", "success");
         } else {
             // update the record being edited
@@ -821,42 +867,66 @@ function editRecord(data) {
 let allRecords = [];     // every record from the database
 let shownRecords = [];   // records currently shown in the table (used for PDF)
 
+// reads the records once (used right before saving, to be sure they are current)
 async function loadRecords() {
-    allRecords = [];
-
     try {
         let snapshot = await getDocs(collection(db, "Productions"));
-
-        snapshot.forEach(function(record) {
-            let data = record.data();
-            data.id = record.id;
-            // make sure the date is a clean "YYYY-MM-DD" text
-            data.productionDate = String(data.productionDate || "").trim();
-            allRecords.push(data);
-        });
-
-        // newest production date first
-        // newest production date first; same date -> newest entered first
-        allRecords.sort(function(a, b) {
-            if (a.productionDate < b.productionDate) return 1;
-            if (a.productionDate > b.productionDate) return -1;
-            let aTime = a.createdAt || "";
-            let bTime = b.createdAt || "";
-            if (aTime < bTime) return 1;
-            if (aTime > bTime) return -1;
-            return 0;
-        });
-
-        updateDashboard();
-        displayRecords();
-        document.getElementById("backupCount").textContent = allRecords.length;
-        showNextBatch();
+        useRecords(snapshot);
     }
     catch (error) {
         console.error(error);
         document.getElementById("recordsList").innerHTML =
             "<tr><td colspan='9' class='empty'>Error loading records. Check firebase setting and database</td></tr>";
     }
+}
+
+// keeps the records live: whenever anyone adds, edits or deletes a record,
+// Firestore sends the new list and every table and card updates by itself
+let stopWatchingRecords = null;
+
+function watchRecords() {
+    stopRecordsWatch();
+    stopWatchingRecords = onSnapshot(collection(db, "Productions"), useRecords, function(error) {
+        console.error(error);
+        document.getElementById("recordsList").innerHTML =
+            "<tr><td colspan='9' class='empty'>Error loading records. Check firebase setting and database</td></tr>";
+    });
+}
+
+function stopRecordsWatch() {
+    if (stopWatchingRecords != null) {
+        stopWatchingRecords();
+        stopWatchingRecords = null;
+    }
+}
+
+// puts a list of records from Firestore on the screen
+function useRecords(snapshot) {
+    allRecords = [];
+
+    snapshot.forEach(function(record) {
+        let data = record.data();
+        data.id = record.id;
+        // make sure the date is a clean "YYYY-MM-DD" text
+        data.productionDate = String(data.productionDate || "").trim();
+        allRecords.push(data);
+    });
+
+    // newest production date first; same date -> newest entered first
+    allRecords.sort(function(a, b) {
+        if (a.productionDate < b.productionDate) return 1;
+        if (a.productionDate > b.productionDate) return -1;
+        let aTime = a.createdAt || "";
+        let bTime = b.createdAt || "";
+        if (aTime < bTime) return 1;
+        if (aTime > bTime) return -1;
+        return 0;
+    });
+
+    updateDashboard();
+    displayRecords();
+    document.getElementById("backupCount").textContent = allRecords.length;
+    showNextBatch();
 }
 
 
