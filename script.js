@@ -7,6 +7,7 @@ import {
     getDocs,
     getDoc,
     setDoc,
+    onSnapshot,
     deleteDoc,
     updateDoc,
     doc
@@ -133,6 +134,7 @@ onAuthStateChanged(auth, async function(user) {
     }
 
     if (user == null) {
+        stopWatchingAccount();
         currentUser = null;
         await showLoginOrSetup();
         return;
@@ -164,6 +166,7 @@ onAuthStateChanged(auth, async function(user) {
         };
 
         startSystem();
+        watchMyAccount();
     }
     catch (error) {
         console.error(error);
@@ -171,6 +174,44 @@ onAuthStateChanged(auth, async function(user) {
         setLoginMessage("Error loading your account. Check firebase setting and database", "error");
     }
 });
+
+// watches the logged-in account while the system is open:
+// if an admin deactivates it, the person is logged out right away;
+// if an admin changes its type, the menus update right away
+let stopWatching = null;
+
+function watchMyAccount() {
+    if (stopWatching != null) {
+        stopWatching();
+    }
+
+    stopWatching = onSnapshot(doc(db, "Users", currentUser.uid), async function(userDoc) {
+        if (currentUser == null) {
+            return;
+        }
+
+        if (!userDoc.exists() || userDoc.data().status == "disabled") {
+            stopWatchingAccount();
+            setLoginMessage("Your account has been deactivated. Please contact your admin.", "error");
+            await signOut(auth);
+            return;
+        }
+
+        let newRole = userDoc.data().role;
+        if (newRole != currentUser.role) {
+            currentUser.role = newRole;
+            alert("Your account type was changed to " + roleName(newRole) + ".");
+            startSystem();
+        }
+    });
+}
+
+function stopWatchingAccount() {
+    if (stopWatching != null) {
+        stopWatching();
+        stopWatching = null;
+    }
+}
 
 // if no accounts exist yet, show the first-time setup instead of the login
 async function showLoginOrSetup() {
@@ -214,6 +255,9 @@ function authErrorText(error) {
 // ===== LOGIN =====
 document.getElementById("loginButton").addEventListener("click", login);
 document.getElementById("loginPassword").addEventListener("keydown", function(e) {
+    if (e.key == "Enter") login();
+});
+document.getElementById("loginEmail").addEventListener("keydown", function(e) {
     if (e.key == "Enter") login();
 });
 
@@ -369,6 +413,7 @@ async function createMotherAdmin() {
         settingUp = false;
         currentUser = { uid: result.user.uid, name: name, email: email, role: "mother_admin" };
         startSystem();
+        watchMyAccount();
     }
     catch (error) {
         console.error(error);
@@ -759,9 +804,14 @@ async function loadRecords() {
         });
 
         // newest production date first
+        // newest production date first; same date -> newest entered first
         allRecords.sort(function(a, b) {
             if (a.productionDate < b.productionDate) return 1;
             if (a.productionDate > b.productionDate) return -1;
+            let aTime = a.createdAt || "";
+            let bTime = b.createdAt || "";
+            if (aTime < bTime) return 1;
+            if (aTime > bTime) return -1;
             return 0;
         });
 
@@ -1190,7 +1240,11 @@ function downloadBackup() {
             finish: r.finish,
             quantity: r.quantity,
             productionDate: r.productionDate,
-            producedBy: r.producedBy
+            producedBy: r.producedBy,
+            recordedBy: r.recordedBy || "",
+            recordedByUid: r.recordedByUid || "",
+            createdAt: r.createdAt || "",
+            lastEditedBy: r.lastEditedBy || ""
         });
     }
 
@@ -1266,9 +1320,15 @@ function restoreBackup() {
         if (mode == "replace") {
             let ok = confirm("This will DELETE all " + allRecords.length +
                 " current records and replace them with " + backup.records.length +
-                " records from the backup. Continue?");
+                " records from the backup. A safety backup of the current records " +
+                "will be downloaded first. Continue?");
             if (!ok) {
                 return;
+            }
+
+            // safety net: save the current records before deleting them
+            if (allRecords.length > 0) {
+                downloadBackup();
             }
         }
 
@@ -1312,7 +1372,7 @@ function restoreBackup() {
                     continue;
                 }
 
-                await addDoc(collection(db, "Productions"), {
+                let restored = {
                     batchNo: String(r.batchNo).trim(),
                     productName: String(r.productName).trim(),
                     paintType: r.paintType,
@@ -1320,8 +1380,18 @@ function restoreBackup() {
                     finish: r.finish,
                     quantity: Number(r.quantity),
                     productionDate: String(r.productionDate).trim(),
-                    producedBy: String(r.producedBy).trim()
-                });
+                    producedBy: String(r.producedBy).trim(),
+                    // keep who entered it and when (older backups may not have these)
+                    recordedBy: r.recordedBy ? String(r.recordedBy) : "Restored from backup",
+                    recordedByUid: r.recordedByUid ? String(r.recordedByUid) : "",
+                    createdAt: r.createdAt ? String(r.createdAt) : new Date().toISOString(),
+                    restoredBy: currentUser.name
+                };
+                if (r.lastEditedBy) {
+                    restored.lastEditedBy = String(r.lastEditedBy);
+                }
+
+                await addDoc(collection(db, "Productions"), restored);
                 usedBatches.push(batch);
                 added++;
             }
