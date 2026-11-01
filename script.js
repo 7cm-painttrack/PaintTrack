@@ -585,6 +585,28 @@ function showPage(pageId, buttonId) {
 }
 
 
+// ===== BATCH NUMBER (made by the system) =====
+// finds the highest BATCH-### number saved so far and adds 1
+// e.g. BATCH-024 is the highest -> the next one is BATCH-025
+function nextBatchNumber() {
+    let highest = 0;
+    for (let i = 0; i < allRecords.length; i++) {
+        let match = String(allRecords[i].batchNo).match(/^BATCH-(\d+)$/i);
+        if (match != null && Number(match[1]) > highest) {
+            highest = Number(match[1]);
+        }
+    }
+    return "BATCH-" + String(highest + 1).padStart(3, "0");
+}
+
+// shows the next batch number in the form (only when adding, not editing)
+function showNextBatch() {
+    if (editingId == "") {
+        document.getElementById("batchNo").value = nextBatchNumber();
+    }
+}
+
+
 // ===== ADD / EDIT PRODUCTION (saves to Firestore) =====
 let editingId = "";   // empty = adding a new record, has a value = editing a record
 let editingRecord = null;
@@ -600,7 +622,7 @@ function showMessage(text, type) {
 }
 
 function clearForm() {
-    document.getElementById("batchNo").value = "";
+    document.getElementById("batchNo").value = nextBatchNumber();
     document.getElementById("productName").value = "";
     document.getElementById("paintType").value = "";
     document.getElementById("color").value = "";
@@ -641,7 +663,8 @@ function cancelEdit() {
 }
 
 async function saveData() {
-    let batchNo = document.getElementById("batchNo").value;
+    // Batch Number is made by the system (worked out below, right before saving)
+    let batchNo = "";
     let productName = document.getElementById("productName").value;
     let paintType = document.getElementById("paintType").value;
     let color = document.getElementById("color").value;
@@ -661,7 +684,7 @@ async function saveData() {
         finish = finishChecked.value;
     }
 
-    if (batchNo.trim() == "" || productName.trim() == "" || paintType == "" ||
+    if (productName.trim() == "" || paintType == "" ||
         color.trim() == "" || finish == "" || quantity == "" ||
         productionDate == "" || producedBy.trim() == "") {
         showMessage("Please complete all fields", "error");
@@ -689,7 +712,16 @@ async function saveData() {
     // records other users saved since this page was opened
     await loadRecords();
 
-    // batch number must not be used by another record
+    // new record: the next number after the latest batch
+    // (worked out after loading, in case someone else just saved one)
+    // editing: the record keeps its own batch number
+    if (editingId == "") {
+        batchNo = nextBatchNumber();
+    } else {
+        batchNo = editingRecord.batchNo;
+    }
+
+    // safety check: batch number must not be used by another record
     for (let i = 0; i < allRecords.length; i++) {
         let sameBatch = String(allRecords[i].batchNo).toLowerCase() == batchNo.trim().toLowerCase();
         if (sameBatch && allRecords[i].id != editingId) {
@@ -717,7 +749,7 @@ async function saveData() {
             record.recordedByUid = currentUser.uid;
             record.createdAt = new Date().toISOString();
             await addDoc(collection(db, "Productions"), record);
-            showMessage("Production record saved successfully!", "success");
+            showMessage("Production record " + batchNo + " saved successfully!", "success");
         } else {
             // update the record being edited
             if (!canEditRecord(editingRecord)) {
@@ -818,6 +850,7 @@ async function loadRecords() {
         updateDashboard();
         displayRecords();
         document.getElementById("backupCount").textContent = allRecords.length;
+        showNextBatch();
     }
     catch (error) {
         console.error(error);
