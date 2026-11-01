@@ -47,6 +47,30 @@ const secondaryApp = initializeApp(firebaseConfig, "Secondary");
 const secondaryAuth = getAuth(secondaryApp);
 
 
+// ===== SAFE TEXT =====
+// turns characters like < and > into plain text, so typed text
+// can never be read as HTML or code when it is shown in a table
+function safe(text) {
+    if (text == null) {
+        return "";
+    }
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+// today's date as "YYYY-MM-DD" (the same format the date boxes use)
+function todayText() {
+    let now = new Date();
+    return now.getFullYear() + "-" +
+        String(now.getMonth() + 1).padStart(2, "0") + "-" +
+        String(now.getDate()).padStart(2, "0");
+}
+
+
 // ===== ACCOUNTS & ROLES =====
 // the logged-in user: { uid, name, email, role }
 let currentUser = null;
@@ -483,6 +507,13 @@ function showPage(pageId, buttonId) {
         if (pageId == "accounts" && !canManageAccounts()) return;
     }
 
+    // leaving the form while editing cancels the edit
+    if (pageId != "add" && editingId != "") {
+        clearForm();
+        resetToAddMode();
+        showMessage("", "");
+    }
+
     // hide all pages
     document.getElementById("dashboard").classList.remove("active");
     document.getElementById("add").classList.remove("active");
@@ -530,6 +561,9 @@ function clearForm() {
     document.getElementById("color").value = "";
     document.getElementById("quantity").value = "";
     document.getElementById("productionDate").value = "";
+
+    // the date picker cannot go past today
+    document.getElementById("productionDate").max = todayText();
 
     // Produced By is always the logged-in account
     if (currentUser != null) {
@@ -595,11 +629,27 @@ async function saveData() {
         return;
     }
 
+    // production date cannot be in the future
+    if (productionDate > todayText()) {
+        showMessage("Production date cannot be in the future", "error");
+        return;
+    }
+
+    // ---- 2. stop double saving: lock the button while saving ----
+    let saveButton = document.getElementById("Savebutton");
+    saveButton.disabled = true;
+    saveButton.textContent = "Saving...";
+
+    // get the latest records first, so the batch check also sees
+    // records other users saved since this page was opened
+    await loadRecords();
+
     // batch number must not be used by another record
     for (let i = 0; i < allRecords.length; i++) {
         let sameBatch = String(allRecords[i].batchNo).toLowerCase() == batchNo.trim().toLowerCase();
         if (sameBatch && allRecords[i].id != editingId) {
             showMessage("Batch number " + batchNo.trim() + " already exists", "error");
+            unlockSaveButton();
             return;
         }
     }
@@ -627,6 +677,7 @@ async function saveData() {
             // update the record being edited
             if (!canEditRecord(editingRecord)) {
                 showMessage("You can only edit records you entered today.", "error");
+                unlockSaveButton();
                 return;
             }
             record.lastEditedBy = currentUser.name;
@@ -641,6 +692,19 @@ async function saveData() {
     catch (error) {
         console.error(error);
         showMessage("Error saving record. Check firebase setting and database", "error");
+    }
+
+    unlockSaveButton();
+}
+
+// turns the Save button back on, with the right words for add or edit
+function unlockSaveButton() {
+    let saveButton = document.getElementById("Savebutton");
+    saveButton.disabled = false;
+    if (editingId == "") {
+        saveButton.textContent = "Save Production Record";
+    } else {
+        saveButton.textContent = "Update Production Record";
     }
 }
 
@@ -799,13 +863,13 @@ function updateDashboard() {
             let r = todayRecords[i];
             let row = document.createElement("tr");
             row.innerHTML =
-                "<td>" + r.batchNo + "</td>" +
-                "<td>" + r.productName + "</td>" +
-                "<td>" + r.paintType + "</td>" +
-                "<td>" + r.color + "</td>" +
-                "<td>" + r.finish + "</td>" +
-                "<td>" + r.quantity + "</td>" +
-                "<td>" + r.producedBy + "</td>";
+                "<td>" + safe(r.batchNo) + "</td>" +
+                "<td>" + safe(r.productName) + "</td>" +
+                "<td>" + safe(r.paintType) + "</td>" +
+                "<td>" + safe(r.color) + "</td>" +
+                "<td>" + safe(r.finish) + "</td>" +
+                "<td>" + safe(r.quantity) + "</td>" +
+                "<td>" + safe(r.producedBy) + "</td>";
             todayTable.appendChild(row);
         }
     }
@@ -823,14 +887,14 @@ function updateDashboard() {
             let r = allRecords[i];
             let row = document.createElement("tr");
             row.innerHTML =
-                "<td>" + r.batchNo + "</td>" +
-                "<td>" + r.productName + "</td>" +
-                "<td>" + r.paintType + "</td>" +
-                "<td>" + r.color + "</td>" +
-                "<td>" + r.finish + "</td>" +
-                "<td>" + r.quantity + "</td>" +
-                "<td>" + r.productionDate + "</td>" +
-                "<td>" + r.producedBy + "</td>";
+                "<td>" + safe(r.batchNo) + "</td>" +
+                "<td>" + safe(r.productName) + "</td>" +
+                "<td>" + safe(r.paintType) + "</td>" +
+                "<td>" + safe(r.color) + "</td>" +
+                "<td>" + safe(r.finish) + "</td>" +
+                "<td>" + safe(r.quantity) + "</td>" +
+                "<td>" + safe(r.productionDate) + "</td>" +
+                "<td>" + safe(r.producedBy) + "</td>";
             recentTable.appendChild(row);
         }
     }
@@ -918,14 +982,14 @@ function displayRecords() {
 
         let row = document.createElement("tr");
         row.innerHTML =
-            "<td>" + data.batchNo + "</td>" +
-            "<td>" + data.productName + "</td>" +
-            "<td>" + data.paintType + "</td>" +
-            "<td>" + data.color + "</td>" +
-            "<td>" + data.finish + "</td>" +
-            "<td>" + data.quantity + "</td>" +
-            "<td>" + data.productionDate + "</td>" +
-            "<td>" + data.producedBy + "</td>";
+            "<td>" + safe(data.batchNo) + "</td>" +
+            "<td>" + safe(data.productName) + "</td>" +
+            "<td>" + safe(data.paintType) + "</td>" +
+            "<td>" + safe(data.color) + "</td>" +
+            "<td>" + safe(data.finish) + "</td>" +
+            "<td>" + safe(data.quantity) + "</td>" +
+            "<td>" + safe(data.productionDate) + "</td>" +
+            "<td>" + safe(data.producedBy) + "</td>";
 
         let actionCell = document.createElement("td");
 
@@ -1398,8 +1462,8 @@ async function loadAccounts() {
             let statusText = (account.status == "disabled") ? "Deactivated" : "Active";
 
             row.innerHTML =
-                "<td>" + account.name + you + "</td>" +
-                "<td>" + account.email + "</td>" +
+                "<td>" + safe(account.name) + you + "</td>" +
+                "<td>" + safe(account.email) + "</td>" +
                 "<td><span class='role-badge " + account.role + "'>" + roleName(account.role) + "</span></td>" +
                 "<td><span class='" + statusClass + "'>" + statusText + "</span></td>";
 
