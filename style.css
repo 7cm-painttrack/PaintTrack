@@ -635,3 +635,7 @@ input[type="file"] {
 /* Edit Name comes first in the accounts table: keep a gap after it */
 .btn-small + .btn-delete, .btn-small + .btn-edit { margin-left: 6px; }
 #accountsList td .btn-small:first-child { margin-left: 0; }
+
+/* Edit Account card (Mother Admin) */
+.edit-account { border: 2px solid #f59e0b; }
+.edit-account-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }

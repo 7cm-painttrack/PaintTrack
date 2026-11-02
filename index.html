@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PaintTrack</title>
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
 
@@ -520,6 +520,46 @@
           <p id="accountMessage" class="message"></p>
         </div>
 
+        <!-- Edit Account: Mother Admin only, opened with the Edit button in the table -->
+        <div id="editAccountCard" class="card form edit-account hidden">
+          <h3 class="form-title" id="editAccountTitle">Edit Account</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label for="editAccName">Full Name</label>
+              <input type="text" id="editAccName" maxlength="50">
+            </div>
+            <div class="field">
+              <label for="editAccEmail">Email</label>
+              <input type="email" id="editAccEmail" readonly>
+              <span class="field-note">The login email can't be changed here. If it is wrong, create a new account and deactivate this one.</span>
+            </div>
+            <div class="field" id="editAccRoleField">
+              <label for="editAccRole">Account Type</label>
+              <select id="editAccRole">
+                <option value="employee">Employee</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div class="field" id="editAccStatusField">
+              <label>Status</label>
+              <div class="radio-group">
+                <label class="radio"><input type="radio" name="editAccStatus" value="active"> Active</label>
+                <label class="radio"><input type="radio" name="editAccStatus" value="disabled"> Deactivated</label>
+              </div>
+            </div>
+            <div class="field full" id="editAccLockedNote">
+              <span class="field-note">This is the Mother Admin account, so only the name can be changed.</span>
+            </div>
+          </div>
+
+          <div class="edit-account-buttons">
+            <button id="saveAccountButton" class="btn-primary">Save Changes</button>
+            <button id="resetAccountButton" class="btn-secondary">Send Password Reset Link</button>
+            <button id="cancelAccountButton" class="btn-secondary">Cancel</button>
+          </div>
+          <p id="editAccountMessage" class="message"></p>
+        </div>
+
         <div class="section-head">
           <h3>All Accounts</h3>
           <span class="section-note" id="accountsCount"></span>
@@ -543,7 +583,7 @@
 
         <div class="card role-guide">
           <h3>What each account can do</h3>
-          <p><span class="role-badge mother_admin">Mother Admin</span> Everything: records, backup, restore, and all accounts.</p>
+          <p><span class="role-badge mother_admin">Mother Admin</span> Everything: records, backup, restore, and all accounts (edit names, account type, status and password resets).</p>
           <p><span class="role-badge admin">Admin</span> Add, edit, delete records, download PDFs and backups, and manage Employee accounts.</p>
           <p><span class="role-badge employee">Employee</span> View the dashboard, add production, view records, and edit their own records on the same day they entered them. Cannot download files.</p>
         </div>
@@ -601,6 +641,6 @@
   <!-- Excel library -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-  <script type="module" src="script.js?v=25"></script>
+  <script type="module" src="script.js?v=26"></script>
 </body>
 </html>

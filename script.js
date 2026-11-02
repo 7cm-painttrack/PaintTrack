@@ -2887,18 +2887,16 @@ async function loadAccounts() {
 
             let actionCell = document.createElement("td");
 
-            // Mother Admin can rename every account, including her own
+            // Mother Admin: one Edit button on every account, including her own
             if (currentUser.role == "mother_admin") {
-                let nameButton = document.createElement("button");
-                nameButton.textContent = "Edit Name";
-                nameButton.className = "btn-secondary btn-small";
-                nameButton.addEventListener("click", function() {
-                    renameAccount(account, accounts);
+                let editButton = document.createElement("button");
+                editButton.textContent = "Edit";
+                editButton.className = "btn-edit";
+                editButton.addEventListener("click", function() {
+                    openAccountEditor(account, accounts);
                 });
-                actionCell.appendChild(nameButton);
-            }
-
-            if (canChangeAccount(account)) {
+                actionCell.appendChild(editButton);
+            } else if (canChangeAccount(account)) {
                 // activate / deactivate
                 let statusButton = document.createElement("button");
                 if (account.status == "disabled") {
@@ -2922,20 +2920,6 @@ async function loadAccounts() {
                 });
                 actionCell.appendChild(resetButton);
 
-                // Mother Admin can switch between Admin and Employee
-                if (currentUser.role == "mother_admin") {
-                    let roleButton = document.createElement("button");
-                    roleButton.className = "btn-secondary btn-small";
-                    if (account.role == "admin") {
-                        roleButton.textContent = "Make Employee";
-                    } else {
-                        roleButton.textContent = "Make Admin";
-                    }
-                    roleButton.addEventListener("click", function() {
-                        changeAccountRole(account);
-                    });
-                    actionCell.appendChild(roleButton);
-                }
             } else if (actionCell.children.length == 0) {
                 actionCell.innerHTML = "<span class='locked'>No changes allowed</span>";
             }
@@ -2950,87 +2934,180 @@ async function loadAccounts() {
     }
 }
 
-// Mother Admin only: change an account's name.
-// "Produced By" on that person's production records is updated too,
-// so their records still show (and still count) under their new name.
-async function renameAccount(account, accounts) {
+// ===== EDIT ACCOUNT (Mother Admin only) =====
+// One form for the name, account type, status and password reset.
+// The login email can't be changed from the browser (Firebase only lets
+// a person change their own email), so it is shown but locked.
+let editingAccount = null;      // the account open in the form
+let editingAccounts = [];       // all accounts, to check for duplicate names
+
+document.getElementById("saveAccountButton").addEventListener("click", saveAccountChanges);
+document.getElementById("cancelAccountButton").addEventListener("click", closeAccountEditor);
+document.getElementById("resetAccountButton").addEventListener("click", function() {
+    if (editingAccount != null) {
+        sendAccountReset(editingAccount, true);
+    }
+});
+
+function setEditAccountMessage(text, type) {
+    let message = document.getElementById("editAccountMessage");
+    message.textContent = text;
+    message.className = "message " + type;
+}
+
+function openAccountEditor(account, accounts) {
     if (currentUser.role != "mother_admin") {
         return;
     }
+    editingAccount = account;
+    editingAccounts = accounts;
 
-    let typed = prompt("New name for " + account.name + ":", account.name);
-    if (typed == null) {
-        return;     // Cancel
+    // the Mother Admin account (her own): only the name can change
+    let nameOnly = (account.role == "mother_admin" || account.id == currentUser.uid);
+
+    document.getElementById("editAccountTitle").textContent = "Edit Account: " + account.name;
+    document.getElementById("editAccName").value = account.name;
+    document.getElementById("editAccEmail").value = account.email;
+    document.getElementById("editAccRole").value = account.role;
+
+    let radios = document.getElementsByName("editAccStatus");
+    for (let i = 0; i < radios.length; i++) {
+        radios[i].checked = (radios[i].value == (account.status || "active"));
     }
 
+    if (nameOnly) {
+        document.getElementById("editAccRoleField").classList.add("hidden");
+        document.getElementById("editAccStatusField").classList.add("hidden");
+        document.getElementById("editAccLockedNote").classList.remove("hidden");
+    } else {
+        document.getElementById("editAccRoleField").classList.remove("hidden");
+        document.getElementById("editAccStatusField").classList.remove("hidden");
+        document.getElementById("editAccLockedNote").classList.add("hidden");
+    }
+
+    setEditAccountMessage("", "");
+    let card = document.getElementById("editAccountCard");
+    card.classList.remove("hidden");
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("editAccName").focus();
+}
+
+function closeAccountEditor() {
+    editingAccount = null;
+    document.getElementById("editAccountCard").classList.add("hidden");
+    setEditAccountMessage("", "");
+}
+
+// this person's production records (by account id, or by name for older/restored ones)
+function recordsOf(account) {
+    let list = [];
+    for (let i = 0; i < allRecords.length; i++) {
+        let r = allRecords[i];
+        if (r.recordedByUid == account.id || (!r.recordedByUid && r.producedBy == account.name)) {
+            list.push(r);
+        }
+    }
+    return list;
+}
+
+async function saveAccountChanges() {
+    if (currentUser.role != "mother_admin" || editingAccount == null) {
+        return;
+    }
+    let account = editingAccount;
+    let nameOnly = (account.role == "mother_admin" || account.id == currentUser.uid);
+
     // clean up the typed name: trim and remove double spaces
-    let newName = typed.trim().replace(/\s+/g, " ");
+    let newName = document.getElementById("editAccName").value.trim().replace(/\s+/g, " ");
+    let newRole = document.getElementById("editAccRole").value;
+    let checked = document.querySelector('input[name="editAccStatus"]:checked');
+    let newStatus = checked ? checked.value : (account.status || "active");
 
     if (newName == "") {
-        setAccountMessage("The name cannot be empty.", "error");
+        setEditAccountMessage("The name cannot be empty.", "error");
         return;
     }
     if (newName.length > 50) {
-        setAccountMessage("The name can have at most 50 characters.", "error");
+        setEditAccountMessage("The name can have at most 50 characters.", "error");
         return;
-    }
-    if (newName == account.name) {
-        return;     // nothing changed
     }
 
     // two accounts with the same name would mix up their records
-    for (let i = 0; i < accounts.length; i++) {
-        if (accounts[i].id != account.id &&
-            String(accounts[i].name).toLowerCase() == newName.toLowerCase()) {
-            setAccountMessage("Another account is already named \"" + newName + "\". Please use a different name.", "error");
+    for (let i = 0; i < editingAccounts.length; i++) {
+        if (editingAccounts[i].id != account.id &&
+            String(editingAccounts[i].name).toLowerCase() == newName.toLowerCase()) {
+            setEditAccountMessage("Another account is already named \"" + newName + "\". Please use a different name.", "error");
             return;
         }
     }
 
-    // this person's production records (by account id, or by name for older/restored ones)
-    let theirRecords = [];
-    for (let i = 0; i < allRecords.length; i++) {
-        let r = allRecords[i];
-        if (r.recordedByUid == account.id || (!r.recordedByUid && r.producedBy == account.name)) {
-            theirRecords.push(r);
-        }
+    // what changed
+    let changes = {};
+    let summary = [];
+    if (newName != account.name) {
+        changes.name = newName;
+        summary.push("Name: " + account.name + " \u2192 " + newName);
+    }
+    if (!nameOnly && newRole != account.role && (newRole == "admin" || newRole == "employee")) {
+        changes.role = newRole;
+        summary.push("Account type: " + roleName(account.role) + " \u2192 " + roleName(newRole));
+    }
+    if (!nameOnly && newStatus != (account.status || "active")) {
+        changes.status = newStatus;
+        summary.push("Status: " + (newStatus == "disabled" ? "Deactivated (they will be logged out)" : "Active"));
     }
 
-    let ok = confirm("Change the name \"" + account.name + "\" to \"" + newName + "\"?\n\n" +
-        "Produced By will also be updated on their " + theirRecords.length + " production record(s).");
-    if (!ok) {
+    if (summary.length == 0) {
+        setEditAccountMessage("Nothing was changed.", "error");
         return;
     }
 
-    try {
-        await updateDoc(doc(db, "Users", account.id), { name: newName });
+    let theirRecords = (changes.name ? recordsOf(account) : []);
+    if (changes.name) {
+        summary.push("Produced By will also change on their " + theirRecords.length + " production record(s).");
+    }
 
+    if (!confirm("Save these changes to " + account.name + "'s account?\n\n" + summary.join("\n"))) {
+        return;
+    }
+
+    let saveButton = document.getElementById("saveAccountButton");
+    saveButton.disabled = true;
+    saveButton.textContent = "Saving...";
+
+    try {
+        await updateDoc(doc(db, "Users", account.id), changes);
+
+        // keep Produced By on their records the same as the account name
         for (let i = 0; i < theirRecords.length; i++) {
             let r = theirRecords[i];
-            let changes = { producedBy: newName };
+            let recordChanges = { producedBy: newName };
             if (r.recordedBy == account.name) {
-                changes.recordedBy = newName;
+                recordChanges.recordedBy = newName;
             }
             if (r.lastEditedBy == account.name) {
-                changes.lastEditedBy = newName;
+                recordChanges.lastEditedBy = newName;
             }
-            await updateDoc(doc(db, "Productions", r.id), changes);
+            await updateDoc(doc(db, "Productions", r.id), recordChanges);
         }
 
-        // renamed myself: update the sidebar and forms right away
-        if (account.id == currentUser.uid) {
+        // edited myself: update the sidebar and forms right away
+        if (account.id == currentUser.uid && changes.name) {
             currentUser.name = newName;
             showMyName();
         }
 
-        setAccountMessage("\"" + account.name + "\" is now \"" + newName + "\". " +
-            theirRecords.length + " production record(s) updated.", "success");
+        closeAccountEditor();
+        setAccountMessage((changes.name || account.name) + "'s account was updated.", "success");
         loadAccounts();
     }
     catch (error) {
         console.error(error);
-        setAccountMessage("Error changing the name. Please try again.", "error");
+        setEditAccountMessage("Error saving the changes. Please try again.", "error");
     }
+
+    saveButton.disabled = false;
+    saveButton.textContent = "Save Changes";
 }
 
 async function toggleAccountStatus(account) {
@@ -3056,32 +3133,10 @@ async function toggleAccountStatus(account) {
     }
 }
 
-async function changeAccountRole(account) {
-    if (currentUser.role != "mother_admin" || !canChangeAccount(account)) {
-        return;
-    }
-
-    let newRole = (account.role == "admin") ? "employee" : "admin";
-
-    if (!confirm("Change " + account.name + " to " + roleName(newRole) + "?")) {
-        return;
-    }
-
-    try {
-        await updateDoc(doc(db, "Users", account.id), { role: newRole });
-        setAccountMessage(account.name + " is now " + roleName(newRole) + ".", "success");
-        loadAccounts();
-    }
-    catch (error) {
-        console.error(error);
-        setAccountMessage("Error updating the account.", "error");
-    }
-}
-
-
 // sends a "create new password" email to an account the user manages
-async function sendAccountReset(account) {
-    if (!canChangeAccount(account)) {
+async function sendAccountReset(account, fromEditor) {
+    let allowed = canChangeAccount(account) || (fromEditor && currentUser.role == "mother_admin");
+    if (!allowed) {
         return;
     }
     if (!confirm("Send a password reset link to " + account.email + "?")) {
@@ -3090,11 +3145,19 @@ async function sendAccountReset(account) {
 
     try {
         await sendPasswordResetEmail(auth, account.email);
-        setAccountMessage("Password reset link sent to " + account.email + ".", "success");
+        if (fromEditor) {
+            setEditAccountMessage("Password reset link sent to " + account.email + ".", "success");
+        } else {
+            setAccountMessage("Password reset link sent to " + account.email + ".", "success");
+        }
     }
     catch (error) {
         console.error(error);
-        setAccountMessage(authErrorText(error), "error");
+        if (fromEditor) {
+            setEditAccountMessage(authErrorText(error), "error");
+        } else {
+            setAccountMessage(authErrorText(error), "error");
+        }
     }
 }
 
