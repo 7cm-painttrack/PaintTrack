@@ -104,6 +104,32 @@ function canEditRecord(record) {
 function canDownload() {        // PDF downloads
     return currentUser.role == "mother_admin" || currentUser.role == "admin";
 }
+// is this record the logged-in person's own?
+// (older records without an account id are matched by name)
+function isOwnRecord(record) {
+    if (record.recordedByUid) {
+        return record.recordedByUid == currentUser.uid;
+    }
+    return record.producedBy == currentUser.name;
+}
+
+// records this person may see: everything for admins, only their own for Employees
+function visibleRecords() {
+    if (currentUser == null) {
+        return [];
+    }
+    if (currentUser.role == "employee") {
+        let own = [];
+        for (let i = 0; i < allRecords.length; i++) {
+            if (isOwnRecord(allRecords[i])) {
+                own.push(allRecords[i]);
+            }
+        }
+        return own;
+    }
+    return allRecords;
+}
+
 function canBackup() {
     return currentUser.role == "mother_admin" || currentUser.role == "admin";
 }
@@ -137,6 +163,7 @@ onAuthStateChanged(auth, async function(user) {
     if (user == null) {
         stopWatchingAccount();
         stopRecordsWatch();
+        stopProductsWatch();
         stopCounterWatch();
         stopBackupsWatch();
         currentUser = null;
@@ -437,6 +464,7 @@ document.getElementById("logoutButton").addEventListener("click", async function
     if (!confirm("Log out of PaintTrack?")) {
         return;
     }
+    await releaseLock();
     await signOut(auth);
     hideAllPasswords();
     document.getElementById("currentPassword").value = "";
@@ -455,6 +483,26 @@ function startSystem() {
     badge.textContent = roleName(currentUser.role);
     badge.className = "role-badge " + currentUser.role;
 
+    // dashboard and records wording: Employees see only their own production
+    let isEmployee = (currentUser.role == "employee");
+    document.getElementById("dashSubtitle").textContent = isEmployee ?
+        "Your own paint production" : "Overview of paint production records";
+    document.getElementById("todayCardLabel").textContent = isEmployee ? "My Production Today" : "Produced Today";
+    document.getElementById("weekCardLabel").textContent = isEmployee ? "My Production This Week" : "Produced This Week";
+    document.getElementById("monthCardLabel").textContent = isEmployee ? "My Production This Month" : "Produced This Month";
+    document.getElementById("todayTableTitle").textContent = isEmployee ? "My Production Today" : "Today's Production";
+    document.getElementById("recentTableTitle").textContent = isEmployee ? "My Recent Production" : "Recent Production";
+    document.getElementById("topTableTitle").textContent = isEmployee ? "My Most Produced Paint" : "Most Produced Paint";
+    document.getElementById("recordsSubtitle").textContent = isEmployee ?
+        "Production records you entered" : "All saved production records";
+    if (isEmployee) {
+        document.getElementById("cardTotal").classList.add("hidden");
+        document.getElementById("producerFilterField").classList.add("hidden");
+    } else {
+        document.getElementById("cardTotal").classList.remove("hidden");
+        document.getElementById("producerFilterField").classList.remove("hidden");
+    }
+
     // My Account details
     document.getElementById("profileName").textContent = currentUser.name;
     document.getElementById("profileEmail").textContent = currentUser.email;
@@ -470,9 +518,9 @@ function startSystem() {
     }
 
     if (canDownload()) {
-        document.getElementById("pdfButton").classList.remove("hidden");
+        document.getElementById("downloadButtons").classList.remove("hidden");
     } else {
-        document.getElementById("pdfButton").classList.add("hidden");
+        document.getElementById("downloadButtons").classList.add("hidden");
     }
 
     if (canRestore()) {
@@ -508,6 +556,7 @@ function startSystem() {
     showScreen("appPage");
 
     watchRecords();
+    watchProducts();
     watchBatchCounter();
     watchDailyBackups();
     runDailyBackup();       // catch up if no one was online at midnight
@@ -600,6 +649,11 @@ function showPage(pageId, buttonId) {
 let shownDay = todayText();
 
 setInterval(function() {
+    // a "Being edited by" lock ran out: redraw the table so the tag goes away
+    if (currentUser != null && lockTagsShown) {
+        displayRecords();
+    }
+
     if (currentUser != null && todayText() != shownDay) {
         shownDay = todayText();
         document.getElementById("productionDate").max = shownDay;
@@ -671,6 +725,188 @@ function showNextBatch() {
 }
 
 
+// ===== PRODUCT LIST (dropdown) =====
+// Products are kept in the Firestore "Products" collection so everyone
+// picks the same names. A new name is added only after the operator
+// confirms the spelling; then it appears in everyone's dropdown.
+const NEW_PRODUCT = "__new__";
+let savedProducts = [];          // names from the Products collection
+let stopWatchingProducts = null;
+
+function watchProducts() {
+    stopProductsWatch();
+    stopWatchingProducts = onSnapshot(collection(db, "Products"), function(snapshot) {
+        savedProducts = [];
+        snapshot.forEach(function(productDoc) {
+            savedProducts.push(productDoc.data().name);
+        });
+        fillProductOptions();
+    }, function(error) {
+        console.error(error);
+    });
+}
+
+function stopProductsWatch() {
+    if (stopWatchingProducts != null) {
+        stopWatchingProducts();
+        stopWatchingProducts = null;
+    }
+}
+
+// every product name: the saved list plus names already used in records
+function allProductNames() {
+    let names = [];
+    function addName(name) {
+        name = String(name || "").trim();
+        if (name == "") return;
+        for (let i = 0; i < names.length; i++) {
+            if (names[i].toLowerCase() == name.toLowerCase()) return;   // no duplicates
+        }
+        names.push(name);
+    }
+    for (let i = 0; i < savedProducts.length; i++) addName(savedProducts[i]);
+    for (let i = 0; i < allRecords.length; i++) addName(allRecords[i].productName);
+    names.sort(function(a, b) {
+        return a.toLowerCase() < b.toLowerCase() ? -1 : 1;
+    });
+    return names;
+}
+
+// rebuilds the product dropdown, keeping the current choice
+function fillProductOptions() {
+    let select = document.getElementById("productName");
+    let chosen = select.value;
+    let names = allProductNames();
+
+    // same list as before: leave it alone (rebuilding closes an open list)
+    let listKey = names.join("\n");
+    if (select.dataset.listKey == listKey) {
+        return;
+    }
+    select.dataset.listKey = listKey;
+
+    select.innerHTML = "";
+    let first = document.createElement("option");
+    first.value = "";
+    first.textContent = "-- Select product --";
+    select.appendChild(first);
+
+    for (let i = 0; i < names.length; i++) {
+        let option = document.createElement("option");
+        option.value = names[i];
+        option.textContent = names[i];
+        select.appendChild(option);
+    }
+
+    let addOption = document.createElement("option");
+    addOption.value = NEW_PRODUCT;
+    addOption.textContent = "+ Add a new product...";
+    select.appendChild(addOption);
+
+    if (chosen == NEW_PRODUCT || names.includes(chosen)) {
+        select.value = chosen;
+    } else {
+        select.value = "";
+    }
+}
+
+// choosing "+ Add a new product..." opens the new product box
+document.getElementById("productName").addEventListener("change", function() {
+    if (this.value == NEW_PRODUCT) {
+        document.getElementById("newProductBox").classList.remove("hidden");
+        document.getElementById("newProductName").focus();
+    } else {
+        closeNewProductBox();
+    }
+});
+
+document.getElementById("cancelProductButton").addEventListener("click", function() {
+    closeNewProductBox();
+    document.getElementById("productName").value = "";
+});
+
+document.getElementById("newProductName").addEventListener("keydown", function(e) {
+    if (e.key == "Enter") addNewProduct();
+});
+
+document.getElementById("addProductButton").addEventListener("click", addNewProduct);
+
+function closeNewProductBox() {
+    document.getElementById("newProductBox").classList.add("hidden");
+    document.getElementById("newProductName").value = "";
+}
+
+async function addNewProduct() {
+    // clean up the typed name: trim and remove double spaces
+    let name = document.getElementById("newProductName").value.trim().replace(/\s+/g, " ");
+
+    if (name == "") {
+        showMessage("Please type the new product name.", "error");
+        return;
+    }
+
+    // already in the list (ignoring capital letters)? use that one instead
+    let names = allProductNames();
+    for (let i = 0; i < names.length; i++) {
+        if (names[i].toLowerCase() == name.toLowerCase()) {
+            closeNewProductBox();
+            document.getElementById("productName").value = names[i];
+            showMessage("\"" + names[i] + "\" is already in the list, so it was selected.", "success");
+            return;
+        }
+    }
+
+    // ask the operator to check the name before it is added
+    let ok = confirm("Add \"" + name + "\" as a NEW product?\n\n" +
+        "Please check the spelling. Once added, it will appear in the product list for everyone.");
+    if (!ok) {
+        showMessage("Product not added. Check the name and try again, or pick one from the list.", "error");
+        return;
+    }
+
+    // the document ID is the name in small letters, so the same name can't be added twice
+    let productId = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "product";
+
+    try {
+        // if someone added the same product a moment ago, keep theirs
+        let productRef = doc(db, "Products", productId);
+        let result = await runTransaction(db, async function(transaction) {
+            let existing = await transaction.get(productRef);
+            if (existing.exists()) {
+                return { added: false, name: existing.data().name, by: existing.data().addedBy };
+            }
+            transaction.set(productRef, {
+                name: name,
+                addedBy: currentUser.name,
+                addedAt: new Date().toISOString()
+            });
+            return { added: true, name: name };
+        });
+
+        if (!savedProducts.includes(result.name)) {
+            savedProducts.push(result.name);
+        }
+        fillProductOptions();
+        closeNewProductBox();
+        document.getElementById("productName").value = result.name;
+
+        if (result.added) {
+            showMessage("\"" + result.name + "\" was added to the product list.", "success");
+        } else {
+            showMessage("\"" + result.name + "\" was just added by " + (result.by || "someone else") + ", so it was selected.", "success");
+        }
+    }
+    catch (error) {
+        console.error(error);
+        if (error.code == "permission-denied") {
+            showMessage("Adding products was blocked by the Firestore rules. Add the Products rule in Firebase.", "error");
+        } else {
+            showMessage("Error adding the product. Please try again.", "error");
+        }
+    }
+}
+
+
 // ===== ADD / EDIT PRODUCTION (saves to Firestore) =====
 let editingId = "";   // empty = adding a new record, has a value = editing a record
 let editingRecord = null;
@@ -688,6 +924,7 @@ function showMessage(text, type) {
 function clearForm() {
     document.getElementById("batchNo").value = nextBatchNumber();
     document.getElementById("productName").value = "";
+    closeNewProductBox();
     document.getElementById("paintType").value = "";
     document.getElementById("color").value = "";
     document.getElementById("quantity").value = "";
@@ -711,6 +948,7 @@ function clearForm() {
 
 // puts the form back to "Add" mode
 function resetToAddMode() {
+    releaseLock();
     editingId = "";
     editingRecord = null;
     document.getElementById("addTitle").textContent = "Add Production";
@@ -730,6 +968,10 @@ async function saveData() {
     // Batch Number is made by the system (worked out below, right before saving)
     let batchNo = "";
     let productName = document.getElementById("productName").value;
+    if (productName == NEW_PRODUCT) {
+        showMessage("Please finish adding the new product first (click Add Product), or pick one from the list.", "error");
+        return;
+    }
     let paintType = document.getElementById("paintType").value;
     let color = document.getElementById("color").value;
     let quantity = document.getElementById("quantity").value;
@@ -774,7 +1016,15 @@ async function saveData() {
 
     // get the latest records first, so the batch check also sees
     // records other users saved since this page was opened
+    let wasEditing = (editingId != "");
     await loadRecords();
+
+    // the record being edited was deleted by someone else just now:
+    // stop here (the message is already shown) so it isn't saved as a new batch
+    if (wasEditing && editingId == "") {
+        unlockSaveButton();
+        return;
+    }
 
     // new record: the next number after the latest batch
     // (worked out after loading, in case someone else just saved one)
@@ -859,7 +1109,64 @@ async function saveData() {
                 return;
             }
             record.lastEditedBy = currentUser.name;
-            await updateDoc(doc(db, "Productions", editingId), record);
+            record.lastEditedAt = new Date().toISOString();
+            mySaveStamp = record.lastEditedAt;
+
+            // check the record again right before saving, so two people
+            // editing the same batch can't overwrite each other's changes
+            let recordRef = doc(db, "Productions", editingId);
+            let result = await runTransaction(db, async function(transaction) {
+                let latest = await transaction.get(recordRef);
+                if (!latest.exists()) {
+                    return { status: "deleted" };
+                }
+                // my editing time ran out and someone else opened it
+                if (lockedByOther(latest.data())) {
+                    return { status: "locked", data: latest.data() };
+                }
+                if (recordChanged(editingRecord, latest.data())) {
+                    return { status: "changed", data: latest.data() };
+                }
+                // save the changes and free the batch in one go
+                transaction.update(recordRef, Object.assign({}, record, noLock()));
+                return { status: "saved" };
+            });
+
+            if (result.status == "deleted") {
+                let deletedBatch = editingRecord.batchNo;
+                clearForm();
+                resetToAddMode();
+                showMessage("Batch " + deletedBatch + " was deleted by someone else while you were editing. Your changes were not saved.", "error");
+                unlockSaveButton();
+                return;
+            }
+
+            if (result.status == "locked") {
+                let lockedBatch = editingRecord.batchNo;
+                lockedId = "";              // not mine anymore, don't touch it
+                stopLockTimer();
+                clearForm();
+                resetToAddMode();
+                showMessage("Your changes were NOT saved: " + lockedBatch + " is now being edited by " +
+                    lockOwnerText(result.data) + " (your editing time ran out). Try again when they are done.", "error");
+                unlockSaveButton();
+                return;
+            }
+
+            if (result.status == "changed") {
+                // load the other person's version into the form
+                let latestRecord = result.data;
+                latestRecord.id = editingId;
+                let who = latestRecord.lastEditedBy || "Someone";
+                editRecord(latestRecord);
+                showMessage(who + " updated batch " + latestRecord.batchNo + " while you were editing, so your changes were NOT saved. " +
+                    "The form now shows their version. Check it, make your changes again, then click Update.", "error");
+                unlockSaveButton();
+                return;
+            }
+
+            lockedId = "";                  // already freed by the save
+            stopLockTimer();
             showMessage("Production record updated successfully!", "success");
             resetToAddMode();
         }
@@ -891,6 +1198,249 @@ function unlockSaveButton() {
 }
 
 
+// true if the record was changed since "before" was loaded
+function recordChanged(before, after) {
+    let fields = ["productName", "paintType", "color", "finish", "quantity",
+                  "productionDate", "lastEditedBy", "lastEditedAt"];
+    for (let i = 0; i < fields.length; i++) {
+        let a = String(before[fields[i]] ?? "");
+        let b = String(after[fields[i]] ?? "");
+        if (a != b) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// while editing, watch the same record for changes made on other devices
+let editWarningShown = false;
+let mySaveStamp = "";      // time of this device's own save (not a change by someone else)
+
+function checkEditingRecord() {
+    if (editingId == "" || editingRecord == null) {
+        return;
+    }
+
+    let latest = null;
+    for (let i = 0; i < allRecords.length; i++) {
+        if (allRecords[i].id == editingId) {
+            latest = allRecords[i];
+        }
+    }
+
+    // someone deleted it: stop editing
+    if (latest == null) {
+        let deletedBatch = editingRecord.batchNo;
+        clearForm();
+        resetToAddMode();
+        showMessage("Batch " + deletedBatch + " was deleted by someone else, so editing was stopped.", "error");
+        return;
+    }
+
+    // my editing time ran out and someone else opened it: stop now,
+    // instead of letting me type changes that can't be saved
+    if (lockedId == editingId && lockedByOther(latest)) {
+        let takenBatch = editingRecord.batchNo;
+        lockedId = "";              // not mine anymore, don't touch it
+        stopLockTimer();
+        clearForm();
+        resetToAddMode();
+        showMessage("Editing stopped: " + takenBatch + " is now being edited by " + lockOwnerText(latest) +
+            " (your editing time ran out while the page was in the background).", "error");
+        return;
+    }
+
+    // my own save coming back: not someone else's change
+    if (latest.lastEditedAt && latest.lastEditedAt == mySaveStamp) {
+        return;
+    }
+
+    // someone changed it: warn once (the form is not touched, so typing isn't lost)
+    if (!editWarningShown && recordChanged(editingRecord, latest)) {
+        editWarningShown = true;
+        let who = latest.lastEditedBy || "Someone";
+        showMessage("Heads up: " + who + " just changed batch " + latest.batchNo +
+            ". If you click Update, you will be shown their version first so nothing gets overwritten.", "error");
+    }
+}
+
+// ===== EDITING LOCK =====
+// Only one person can edit a batch at a time. Opening a batch for editing
+// marks it as "being edited by <name>". The mark is refreshed every 30 seconds
+// while the form is open, and is treated as free after 2 minutes without a
+// refresh (for example, if the browser was closed in the middle of editing).
+const LOCK_MINUTES = 2;
+const mySession = getTabId();     // this browser tab (kept after a page refresh)
+let lockTagsShown = false;        // true while a "Being edited by" tag is on screen
+
+function getTabId() {
+    let id = "";
+    try {
+        id = sessionStorage.getItem("paintTrackTab") || "";
+    } catch (error) {
+        id = "";
+    }
+    if (id == "") {
+        id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        try {
+            sessionStorage.setItem("paintTrackTab", id);
+        } catch (error) {
+            // private mode: a new id every time is still fine
+        }
+    }
+    return id;
+}
+let lockedId = "";          // the batch this tab is holding
+let lockTimer = null;
+
+// is someone (anyone) editing this record right now?
+function lockIsActive(r) {
+    if (!r || !r.editingBy || !r.editingAt) {
+        return false;
+    }
+    let age = Date.now() - new Date(r.editingAt).getTime();
+    return age < LOCK_MINUTES * 60 * 1000;
+}
+
+// is someone else (another person, or me in another tab) editing it?
+function lockedByOther(r) {
+    return lockIsActive(r) && r.editingSession != mySession;
+}
+
+function lockOwnerText(r) {
+    if (currentUser != null && r.editingByUid == currentUser.uid) {
+        return r.editingBy + " (you, on another device or tab)";
+    }
+    return r.editingBy;
+}
+
+function lockedMessage(batchNo, r) {
+    return batchNo + " is currently being edited by: " + lockOwnerText(r) +
+        "\n\nPlease try again when they are done.";
+}
+
+// the lock fields, empty = nobody is editing
+function noLock() {
+    return { editingBy: "", editingByUid: "", editingSession: "", editingAt: "" };
+}
+
+// Edit button: lock the batch first, then open the form
+async function startEdit(data) {
+    if (!canEditRecord(data)) {
+        return;
+    }
+
+    let recordRef = doc(db, "Productions", data.id);
+    try {
+        let result = await runTransaction(db, async function(transaction) {
+            let latest = await transaction.get(recordRef);
+            if (!latest.exists()) {
+                return { status: "deleted" };
+            }
+            let r = latest.data();
+            if (lockedByOther(r)) {
+                return { status: "locked", data: r };
+            }
+            let myLock = {
+                editingBy: currentUser.name,
+                editingByUid: currentUser.uid,
+                editingSession: mySession,
+                editingAt: new Date().toISOString()
+            };
+            transaction.update(recordRef, myLock);
+            Object.assign(r, myLock);
+            r.id = data.id;
+            return { status: "ok", data: r };
+        });
+
+        if (result.status == "deleted") {
+            alert(data.batchNo + " was already deleted.");
+            return;
+        }
+        if (result.status == "locked") {
+            alert(lockedMessage(data.batchNo, result.data));
+            return;
+        }
+
+        lockedId = data.id;
+        startLockTimer();
+        editRecord(result.data);       // fill the form with the latest copy
+    }
+    catch (error) {
+        console.error(error);
+        alert("Could not open " + data.batchNo + " for editing. Please try again.");
+    }
+}
+
+// keep the lock fresh while the form is open
+function startLockTimer() {
+    stopLockTimer();
+    lockTimer = setInterval(refreshLock, 30 * 1000);
+}
+
+function stopLockTimer() {
+    if (lockTimer != null) {
+        clearInterval(lockTimer);
+        lockTimer = null;
+    }
+}
+
+async function refreshLock() {
+    if (lockedId == "") {
+        return;
+    }
+    let recordRef = doc(db, "Productions", lockedId);
+    try {
+        await runTransaction(db, async function(transaction) {
+            let latest = await transaction.get(recordRef);
+            // only refresh it if it is still mine
+            if (latest.exists() && latest.data().editingSession == mySession) {
+                transaction.update(recordRef, { editingAt: new Date().toISOString() });
+            }
+        });
+    }
+    catch (error) {
+        console.log("Lock not refreshed:", error);
+    }
+}
+
+// free the batch so others can edit it
+async function releaseLock() {
+    if (lockedId == "") {
+        return;
+    }
+    let id = lockedId;
+    lockedId = "";
+    stopLockTimer();
+
+    let recordRef = doc(db, "Productions", id);
+    try {
+        await runTransaction(db, async function(transaction) {
+            let latest = await transaction.get(recordRef);
+            if (latest.exists() && latest.data().editingSession == mySession) {
+                transaction.update(recordRef, noLock());
+            }
+        });
+    }
+    catch (error) {
+        console.log("Lock not released:", error);
+    }
+}
+
+// coming back to the tab (phones pause timers in the background):
+// refresh the lock right away
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState == "visible") {
+        refreshLock();
+    }
+});
+
+// closing or refreshing the page while editing frees the batch
+// (if this doesn't finish in time, the lock simply runs out after 2 minutes)
+window.addEventListener("beforeunload", function() {
+    releaseLock();
+});
+
 // ===== EDIT RECORD (loads the record into the form) =====
 function editRecord(data) {
     if (!canEditRecord(data)) {
@@ -898,8 +1448,11 @@ function editRecord(data) {
     }
     editingId = data.id;
     editingRecord = data;
+    editWarningShown = false;
 
     document.getElementById("batchNo").value = data.batchNo;
+    fillProductOptions();
+    closeNewProductBox();
     document.getElementById("productName").value = data.productName;
     document.getElementById("paintType").value = data.paintType;
     document.getElementById("color").value = data.color;
@@ -982,14 +1535,115 @@ function useRecords(snapshot) {
         return 0;
     });
 
+    fillFilterOptions();
+    fillProductOptions();
     updateDashboard();
     displayRecords();
     document.getElementById("backupCount").textContent = allRecords.length;
     showNextBatch();
+    checkEditingRecord();
 }
 
 
 // ===== DASHBOARD (today, this week, this month) =====
+// ===== MOST PRODUCED PAINT =====
+// adds up the liters of each product and ranks them (highest first)
+function showTopProducts(records, monday, sunday, today) {
+    let period = document.getElementById("topPeriod").value;
+    let totals = {};        // key = product name in small letters
+    let grandTotal = 0;
+
+    for (let i = 0; i < records.length; i++) {
+        let r = records[i];
+        let name = String(r.productName || "").trim();
+        if (name == "") {
+            continue;
+        }
+
+        // keep only the records inside the chosen period
+        if (period != "all") {
+            if (!r.productionDate) {
+                continue;
+            }
+            let parts = r.productionDate.split("-");
+            let recordDate = new Date(parts[0], parts[1] - 1, parts[2]);
+            if (period == "week" && (recordDate < monday || recordDate > sunday)) {
+                continue;
+            }
+            if (period == "month" && (recordDate.getMonth() != today.getMonth() ||
+                recordDate.getFullYear() != today.getFullYear())) {
+                continue;
+            }
+        }
+
+        let key = name.toLowerCase();
+        if (!totals[key]) {
+            totals[key] = { name: name, batches: 0, liters: 0 };
+        }
+        let qty = Number(r.quantity) || 0;
+        totals[key].batches++;
+        totals[key].liters += qty;
+        grandTotal += qty;
+    }
+
+    // turn into a list and sort: most liters first, then most batches
+    let list = Object.values(totals);
+    list.sort(function(a, b) {
+        if (b.liters != a.liters) {
+            return b.liters - a.liters;
+        }
+        if (b.batches != a.batches) {
+            return b.batches - a.batches;
+        }
+        return a.name.localeCompare(b.name);
+    });
+
+    let periodText = "of all time";
+    if (period == "month") {
+        periodText = "this month";
+    } else if (period == "week") {
+        periodText = "this week";
+    }
+
+    let table = document.getElementById("topList");
+    table.innerHTML = "";
+
+    if (list.length == 0) {
+        document.getElementById("topName").textContent = "-";
+        document.getElementById("topDetail").textContent = "No production " + periodText + " yet";
+        table.innerHTML = "<tr><td colspan='5' class='empty'>No production " + periodText + " yet.</td></tr>";
+        return;
+    }
+
+    // highlight box: number 1
+    let first = list[0];
+    document.getElementById("topName").textContent = first.name;
+    document.getElementById("topDetail").textContent =
+        first.liters.toLocaleString() + " L in " + first.batches + " batch(es) " + periodText;
+
+    // table: top 5
+    let count = Math.min(list.length, 5);
+    for (let i = 0; i < count; i++) {
+        let p = list[i];
+        let share = grandTotal > 0 ? Math.round((p.liters / grandTotal) * 100) : 0;
+        let rankClass = (i == 0) ? "rank first" : "rank";
+        let row = document.createElement("tr");
+        row.innerHTML =
+            "<td><span class='" + rankClass + "'>" + (i + 1) + "</span></td>" +
+            "<td>" + safe(p.name) + "</td>" +
+            "<td>" + p.batches + "</td>" +
+            "<td>" + p.liters.toLocaleString() + " L</td>" +
+            "<td class='share-col'><div class='share-bar'>" +
+                "<span class='share-track'><span class='share-fill' style='width:" + share + "%'></span></span>" +
+                "<span class='share-text'>" + share + "%</span>" +
+            "</div></td>";
+        table.appendChild(row);
+    }
+}
+
+// changing the period redraws the dashboard
+document.getElementById("topPeriod").addEventListener("change", updateDashboard);
+
 function updateDashboard() {
     // today at 12:00 AM
     let today = new Date();
@@ -1009,8 +1663,11 @@ function updateDashboard() {
     let monthCount = 0, monthLiters = 0;
     let totalLiters = 0;
 
-    for (let i = 0; i < allRecords.length; i++) {
-        let r = allRecords[i];
+    // Employees: only their own batches; admins: everyone's
+    let records = visibleRecords();
+
+    for (let i = 0; i < records.length; i++) {
+        let r = records[i];
         let qty = Number(r.quantity) || 0;
         totalLiters += qty;
 
@@ -1043,7 +1700,7 @@ function updateDashboard() {
     document.getElementById("todayCount").textContent = todayCount;
     document.getElementById("weekCount").textContent = weekCount;
     document.getElementById("monthCount").textContent = monthCount;
-    document.getElementById("totalRecords").textContent = allRecords.length;
+    document.getElementById("totalRecords").textContent = records.length;
 
     // liters
     document.getElementById("todayLiters").textContent = todayLiters.toLocaleString() + " L produced";
@@ -1059,6 +1716,9 @@ function updateDashboard() {
         monday.toLocaleDateString("en-US", shortDate) + " - " + sunday.toLocaleDateString("en-US", shortDate);
     document.getElementById("monthLabel").textContent =
         today.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+    // ----- Most Produced Paint -----
+    showTopProducts(records, monday, sunday, today);
 
     // ----- Today's Production table -----
     document.getElementById("todayTableLabel").textContent =
@@ -1087,16 +1747,16 @@ function updateDashboard() {
     }
 
     // ----- Recent Production table (latest 5) -----
-    // allRecords is already sorted newest date first
+    // records are already sorted newest date first
     let recentTable = document.getElementById("recentList");
     recentTable.innerHTML = "";
 
-    if (allRecords.length == 0) {
+    if (records.length == 0) {
         recentTable.innerHTML = "<tr><td colspan='8' class='empty'>No production records yet.</td></tr>";
     } else {
-        let limit = Math.min(5, allRecords.length);
+        let limit = Math.min(5, records.length);
         for (let i = 0; i < limit; i++) {
-            let r = allRecords[i];
+            let r = records[i];
             let row = document.createElement("tr");
             row.innerHTML =
                 "<td>" + safe(r.batchNo) + "</td>" +
@@ -1113,6 +1773,67 @@ function updateDashboard() {
 }
 
 
+// ===== DASHBOARD CARDS -> VIEW RECORDS =====
+// clicking a card opens View Records with the same dates the card counts
+
+// turns a date into "YYYY-MM-DD"
+function dateText(day) {
+    return day.getFullYear() + "-" +
+        String(day.getMonth() + 1).padStart(2, "0") + "-" +
+        String(day.getDate()).padStart(2, "0");
+}
+
+function openRecords(start, end) {
+    document.getElementById("startDate").value = start;
+    document.getElementById("endDate").value = end;
+    clearExtraFilters();
+    displayRecords();
+    showPage("records", "recordsBtn");
+}
+
+function openToday() {
+    openRecords(todayText(), todayText());
+}
+
+function openThisWeek() {
+    // Monday to Sunday, the same week the dashboard card counts
+    let today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let day = today.getDay();                      // 0 = Sunday, 1 = Monday ...
+    let daysFromMonday = (day == 0) ? 6 : day - 1;
+    let monday = new Date(today);
+    monday.setDate(today.getDate() - daysFromMonday);
+    let sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    openRecords(dateText(monday), dateText(sunday));
+}
+
+function openThisMonth() {
+    let today = new Date();
+    let firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    let lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    openRecords(dateText(firstDay), dateText(lastDay));
+}
+
+function openAllRecords() {
+    openRecords("", "");
+}
+
+// click, or press Enter on a card
+function cardShortcut(cardId, action) {
+    let card = document.getElementById(cardId);
+    card.addEventListener("click", action);
+    card.addEventListener("keydown", function(e) {
+        if (e.key == "Enter") action();
+    });
+}
+
+cardShortcut("cardToday", openToday);
+cardShortcut("cardWeek", openThisWeek);
+cardShortcut("cardMonth", openThisMonth);
+cardShortcut("cardTotal", openAllRecords);
+
+
 // ===== VIEW RECORDS (with start to end date filter) =====
 // the table updates as soon as a date is picked or changed
 document.getElementById("startDate").addEventListener("change", displayRecords);
@@ -1120,13 +1841,130 @@ document.getElementById("endDate").addEventListener("change", displayRecords);
 document.getElementById("startDate").addEventListener("input", displayRecords);
 document.getElementById("endDate").addEventListener("input", displayRecords);
 
+// search, Produced By, Product and Sort update the table right away
+document.getElementById("batchSearch").addEventListener("input", displayRecords);
+document.getElementById("producerFilter").addEventListener("change", displayRecords);
+document.getElementById("productFilter").addEventListener("change", displayRecords);
+document.getElementById("sortBy").addEventListener("change", displayRecords);
+
+// Show All clears every filter
 document.getElementById("showAllButton").addEventListener("click", function() {
     document.getElementById("startDate").value = "";
     document.getElementById("endDate").value = "";
+    clearExtraFilters();
     displayRecords();
 });
 
+function clearExtraFilters() {
+    document.getElementById("batchSearch").value = "";
+    document.getElementById("producerFilter").value = "";
+    document.getElementById("productFilter").value = "";
+}
+
+// fills the Produced By and Product dropdowns from the records,
+// keeping what was chosen if it is still there
+function fillFilterOptions() {
+    let records = visibleRecords();
+    let producers = [];
+    let products = [];
+
+    for (let i = 0; i < records.length; i++) {
+        let producer = String(records[i].producedBy || "");
+        let product = String(records[i].productName || "");
+        if (producer != "" && !producers.includes(producer)) producers.push(producer);
+        if (product != "" && !products.includes(product)) products.push(product);
+    }
+    producers.sort();
+    products.sort();
+
+    fillSelect("producerFilter", "All employees", producers);
+    fillSelect("productFilter", "All products", products);
+}
+
+function fillSelect(selectId, allText, values) {
+    let select = document.getElementById(selectId);
+    let chosen = select.value;
+
+    // same list as before: leave it alone (rebuilding closes an open list)
+    let listKey = allText + "\n" + values.join("\n");
+    if (select.dataset.listKey == listKey) {
+        return;
+    }
+    select.dataset.listKey = listKey;
+
+    select.innerHTML = "";
+    let first = document.createElement("option");
+    first.value = "";
+    first.textContent = allText;
+    select.appendChild(first);
+
+    for (let i = 0; i < values.length; i++) {
+        let option = document.createElement("option");
+        option.value = values[i];
+        option.textContent = values[i];
+        select.appendChild(option);
+    }
+
+    select.value = values.includes(chosen) ? chosen : "";
+}
+
+// words describing the search and dropdown filters, for the summary line and PDF
+function getFilterText() {
+    let parts = [];
+    let search = document.getElementById("batchSearch").value.trim();
+    let producer = document.getElementById("producerFilter").value;
+    let product = document.getElementById("productFilter").value;
+
+    if (search != "") parts.push("Batch contains \"" + search + "\"");
+    if (producer != "") parts.push("Produced by " + producer);
+    if (product != "") parts.push("Product: " + product);
+    return parts.join("  |  ");
+}
+
 // returns the text that describes the selected date range
+// sorts the shown records by the Sort By choice
+function sortShownRecords() {
+    let sortBy = document.getElementById("sortBy").value;
+
+    // turns "BATCH-025" into 25 for number order
+    function batchNumber(r) {
+        let match = String(r.batchNo).match(/(\d+)$/);
+        return match ? Number(match[1]) : 0;
+    }
+    function text(value) {
+        return String(value || "").toLowerCase();
+    }
+    // newest date first, then newest entry first (the normal order)
+    function newest(a, b) {
+        if (a.productionDate != b.productionDate) return a.productionDate < b.productionDate ? 1 : -1;
+        let aTime = a.createdAt || "", bTime = b.createdAt || "";
+        if (aTime != bTime) return aTime < bTime ? 1 : -1;
+        return 0;
+    }
+
+    shownRecords.sort(function(a, b) {
+        if (sortBy == "oldest") {
+            return -newest(a, b);
+        }
+        if (sortBy == "product") {
+            if (text(a.productName) != text(b.productName)) return text(a.productName) < text(b.productName) ? -1 : 1;
+            return newest(a, b);
+        }
+        if (sortBy == "producer") {
+            if (text(a.producedBy) != text(b.producedBy)) return text(a.producedBy) < text(b.producedBy) ? -1 : 1;
+            return newest(a, b);
+        }
+        if (sortBy == "qtyHigh") {
+            let diff = (Number(b.quantity) || 0) - (Number(a.quantity) || 0);
+            return diff != 0 ? diff : newest(a, b);
+        }
+        if (sortBy == "batch") {
+            return batchNumber(b) - batchNumber(a);
+        }
+        return newest(a, b);
+    });
+}
+
 function getRangeText() {
     let startDate = document.getElementById("startDate").value;
     let endDate = document.getElementById("endDate").value;
@@ -1159,10 +1997,16 @@ function displayRecords() {
         return;
     }
 
-    // keep only the records inside the date range
+    let search = document.getElementById("batchSearch").value.trim().toLowerCase();
+    let producer = document.getElementById("producerFilter").value;
+    let product = document.getElementById("productFilter").value;
+    let records = visibleRecords();
+
+    // keep only the records that match every filter
     // ("YYYY-MM-DD" text can be compared directly)
-    for (let i = 0; i < allRecords.length; i++) {
-        let date = allRecords[i].productionDate;
+    for (let i = 0; i < records.length; i++) {
+        let r = records[i];
+        let date = r.productionDate;
 
         if (startDate != "" && date < startDate) {
             continue;
@@ -1170,8 +2014,19 @@ function displayRecords() {
         if (endDate != "" && date > endDate) {
             continue;
         }
-        shownRecords.push(allRecords[i]);
+        if (search != "" && !String(r.batchNo).toLowerCase().includes(search)) {
+            continue;
+        }
+        if (producer != "" && r.producedBy != producer) {
+            continue;
+        }
+        if (product != "" && r.productName != product) {
+            continue;
+        }
+        shownRecords.push(r);
     }
+
+    sortShownRecords();
 
     // total liters of the shown records
     let liters = 0;
@@ -1180,10 +2035,13 @@ function displayRecords() {
     }
 
     // info text above the table
+    let filterText = getFilterText();
     document.getElementById("filterInfo").textContent =
-        "Showing: " + getRangeText() + "  |  " + shownRecords.length + " record(s)  |  " +
+        "Showing: " + getRangeText() + (filterText != "" ? "  |  " + filterText : "") +
+        "  |  " + shownRecords.length + " record(s)  |  " +
         liters.toLocaleString() + " L produced";
 
+    lockTagsShown = false;
     if (shownRecords.length == 0) {
         table.innerHTML = "<tr><td colspan='9' class='empty'>No production records found.</td></tr>";
         return;
@@ -1211,9 +2069,18 @@ function displayRecords() {
             editButton.textContent = "Edit";
             editButton.className = "btn-edit";
             editButton.addEventListener("click", function() {
-                editRecord(data);
+                startEdit(data);
             });
             actionCell.appendChild(editButton);
+        }
+
+        // someone else has this batch open in the edit form
+        if (lockedByOther(data)) {
+            lockTagsShown = true;
+            let tag = document.createElement("span");
+            tag.className = "editing-tag";
+            tag.textContent = "Being edited by " + data.editingBy;
+            actionCell.insertBefore(tag, actionCell.firstChild);
         }
 
         // delete button (Mother Admin and Admin only)
@@ -1244,6 +2111,14 @@ async function deleteRecord(id) {
     if (!canManageRecords()) {
         return;
     }
+    // can't delete a batch someone is editing right now
+    for (let i = 0; i < allRecords.length; i++) {
+        if (allRecords[i].id == id && lockedByOther(allRecords[i])) {
+            alert("Cannot delete. " + lockedMessage(allRecords[i].batchNo, allRecords[i]));
+            return;
+        }
+    }
+
     if (!confirm("Are you sure you want to delete this record?")) {
         return;
     }
@@ -1339,6 +2214,14 @@ function downloadPDF() {
     pdf.text("Total Records: " + shownRecords.length + "     Total Liters: " + liters.toLocaleString() + " L", 14, 53);
     pdf.text("Generated: " + new Date().toLocaleString(), 14, 59);
 
+    // search and dropdown filters, if any are used
+    let tableTop = 65;
+    let pdfFilters = getFilterText();
+    if (pdfFilters != "") {
+        pdf.text("Filters: " + pdfFilters.split("  |  ").join(", "), 14, 65);
+        tableTop = 71;
+    }
+
     // table rows
     let rows = [];
     for (let i = 0; i < shownRecords.length; i++) {
@@ -1356,7 +2239,7 @@ function downloadPDF() {
     }
 
     pdf.autoTable({
-        startY: 65,
+        startY: tableTop,
         head: [["Batch No.", "Product Name", "Type", "Color", "Finish", "Qty (L)", "Date", "Produced By"]],
         body: rows,
         headStyles: { fillColor: [11, 31, 79] }
@@ -1371,6 +2254,86 @@ function downloadPDF() {
         fileName += "_to-" + endDate;
     }
     pdf.save(fileName + ".pdf");
+}
+
+
+// ===== EXCEL =====
+document.getElementById("excelButton").addEventListener("click", downloadExcel);
+
+function downloadExcel() {
+    if (!canDownload()) {
+        alert("Your account is not allowed to download files.");
+        return;
+    }
+
+    if (shownRecords.length == 0) {
+        alert("No records to download.");
+        return;
+    }
+
+    if (!window.XLSX) {
+        alert("The Excel tool did not load. Check your internet and refresh the page.");
+        return;
+    }
+
+    let startDate = document.getElementById("startDate").value;
+    let endDate = document.getElementById("endDate").value;
+
+    // total liters of the shown records
+    let liters = 0;
+    for (let i = 0; i < shownRecords.length; i++) {
+        liters += Number(shownRecords[i].quantity) || 0;
+    }
+
+    // rows of the sheet (each inner list is one row)
+    let rows = [];
+    rows.push(["7CM PaintTrack - Paint Production Records"]);
+    rows.push(["Production Date:", getRangeText()]);
+    let filters = getFilterText();
+    if (filters != "") {
+        rows.push(["Filters:", filters.split("  |  ").join(", ")]);
+    }
+    rows.push(["Total Records:", shownRecords.length]);
+    rows.push(["Total Liters:", liters]);
+    rows.push(["Generated:", new Date().toLocaleString()]);
+    rows.push([]);
+    rows.push(["Batch No.", "Product Name", "Type", "Color", "Finish", "Qty (L)", "Date", "Produced By"]);
+
+    for (let i = 0; i < shownRecords.length; i++) {
+        let r = shownRecords[i];
+        rows.push([
+            r.batchNo,
+            r.productName,
+            r.paintType,
+            r.color,
+            r.finish,
+            Number(r.quantity) || 0,     // kept as a number so Excel can add it up
+            r.productionDate,
+            r.producedBy
+        ]);
+    }
+    rows.push(["", "", "", "", "TOTAL", liters, "", ""]);
+
+    let sheet = XLSX.utils.aoa_to_sheet(rows);
+
+    // column widths
+    sheet["!cols"] = [
+        { wch: 14 }, { wch: 26 }, { wch: 14 }, { wch: 14 },
+        { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }
+    ];
+
+    let book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "Production Records");
+
+    // file name includes the date range if one is selected
+    let fileName = "production-records";
+    if (startDate != "") {
+        fileName += "_from-" + startDate;
+    }
+    if (endDate != "") {
+        fileName += "_to-" + endDate;
+    }
+    XLSX.writeFile(book, fileName + ".xlsx");
 }
 
 
