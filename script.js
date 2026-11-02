@@ -2494,9 +2494,12 @@ async function restoreRecords(backupRecords) {
         let usedBatches = [];
 
         if (mode == "replace") {
-            // delete all current records first
-            for (let i = 0; i < allRecords.length; i++) {
-                await deleteDoc(doc(db, "Productions", allRecords[i].id));
+            // delete all current records first.
+            // Work on a copy of the list: every delete updates allRecords
+            // live, and looping over the shrinking list would skip records.
+            let toDelete = allRecords.slice();
+            for (let i = 0; i < toDelete.length; i++) {
+                await deleteDoc(doc(db, "Productions", toDelete[i].id));
             }
         } else {
             for (let i = 0; i < allRecords.length; i++) {
