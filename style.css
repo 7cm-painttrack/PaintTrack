@@ -631,3 +631,7 @@ input[type="file"] {
     font-size: 12px; font-weight: 700; color: #92400e;
     background: #fef3c7; border: 1px solid #f59e0b; border-radius: 12px;
 }
+
+/* Edit Name comes first in the accounts table: keep a gap after it */
+.btn-small + .btn-delete, .btn-small + .btn-edit { margin-left: 6px; }
+#accountsList td .btn-small:first-child { margin-left: 0; }

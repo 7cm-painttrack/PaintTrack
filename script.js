@@ -228,6 +228,13 @@ function watchMyAccount() {
             return;
         }
 
+        // the Mother Admin changed my name: show it right away
+        let newName = userDoc.data().name;
+        if (newName && newName != currentUser.name) {
+            currentUser.name = newName;
+            showMyName();
+        }
+
         let newRole = userDoc.data().role;
         if (newRole != currentUser.role) {
             currentUser.role = newRole;
@@ -235,6 +242,16 @@ function watchMyAccount() {
             startSystem();
         }
     });
+}
+
+// puts the logged-in name everywhere it is shown
+function showMyName() {
+    document.getElementById("userName").textContent = currentUser.name;
+    document.getElementById("profileName").textContent = currentUser.name;
+    // Produced By on the form (not while editing someone's record)
+    if (editingId == "") {
+        document.getElementById("producedBy").value = currentUser.name;
+    }
 }
 
 function stopWatchingAccount() {
@@ -2870,6 +2887,17 @@ async function loadAccounts() {
 
             let actionCell = document.createElement("td");
 
+            // Mother Admin can rename every account, including her own
+            if (currentUser.role == "mother_admin") {
+                let nameButton = document.createElement("button");
+                nameButton.textContent = "Edit Name";
+                nameButton.className = "btn-secondary btn-small";
+                nameButton.addEventListener("click", function() {
+                    renameAccount(account, accounts);
+                });
+                actionCell.appendChild(nameButton);
+            }
+
             if (canChangeAccount(account)) {
                 // activate / deactivate
                 let statusButton = document.createElement("button");
@@ -2908,7 +2936,7 @@ async function loadAccounts() {
                     });
                     actionCell.appendChild(roleButton);
                 }
-            } else {
+            } else if (actionCell.children.length == 0) {
                 actionCell.innerHTML = "<span class='locked'>No changes allowed</span>";
             }
 
@@ -2919,6 +2947,89 @@ async function loadAccounts() {
     catch (error) {
         console.error(error);
         table.innerHTML = "<tr><td colspan='5' class='empty'>Error loading accounts. Check firebase setting and database</td></tr>";
+    }
+}
+
+// Mother Admin only: change an account's name.
+// "Produced By" on that person's production records is updated too,
+// so their records still show (and still count) under their new name.
+async function renameAccount(account, accounts) {
+    if (currentUser.role != "mother_admin") {
+        return;
+    }
+
+    let typed = prompt("New name for " + account.name + ":", account.name);
+    if (typed == null) {
+        return;     // Cancel
+    }
+
+    // clean up the typed name: trim and remove double spaces
+    let newName = typed.trim().replace(/\s+/g, " ");
+
+    if (newName == "") {
+        setAccountMessage("The name cannot be empty.", "error");
+        return;
+    }
+    if (newName.length > 50) {
+        setAccountMessage("The name can have at most 50 characters.", "error");
+        return;
+    }
+    if (newName == account.name) {
+        return;     // nothing changed
+    }
+
+    // two accounts with the same name would mix up their records
+    for (let i = 0; i < accounts.length; i++) {
+        if (accounts[i].id != account.id &&
+            String(accounts[i].name).toLowerCase() == newName.toLowerCase()) {
+            setAccountMessage("Another account is already named \"" + newName + "\". Please use a different name.", "error");
+            return;
+        }
+    }
+
+    // this person's production records (by account id, or by name for older/restored ones)
+    let theirRecords = [];
+    for (let i = 0; i < allRecords.length; i++) {
+        let r = allRecords[i];
+        if (r.recordedByUid == account.id || (!r.recordedByUid && r.producedBy == account.name)) {
+            theirRecords.push(r);
+        }
+    }
+
+    let ok = confirm("Change the name \"" + account.name + "\" to \"" + newName + "\"?\n\n" +
+        "Produced By will also be updated on their " + theirRecords.length + " production record(s).");
+    if (!ok) {
+        return;
+    }
+
+    try {
+        await updateDoc(doc(db, "Users", account.id), { name: newName });
+
+        for (let i = 0; i < theirRecords.length; i++) {
+            let r = theirRecords[i];
+            let changes = { producedBy: newName };
+            if (r.recordedBy == account.name) {
+                changes.recordedBy = newName;
+            }
+            if (r.lastEditedBy == account.name) {
+                changes.lastEditedBy = newName;
+            }
+            await updateDoc(doc(db, "Productions", r.id), changes);
+        }
+
+        // renamed myself: update the sidebar and forms right away
+        if (account.id == currentUser.uid) {
+            currentUser.name = newName;
+            showMyName();
+        }
+
+        setAccountMessage("\"" + account.name + "\" is now \"" + newName + "\". " +
+            theirRecords.length + " production record(s) updated.", "success");
+        loadAccounts();
+    }
+    catch (error) {
+        console.error(error);
+        setAccountMessage("Error changing the name. Please try again.", "error");
     }
 }
 
