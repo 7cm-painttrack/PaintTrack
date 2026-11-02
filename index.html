@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PaintTrack</title>
-  <link rel="stylesheet" href="style.css?v=15">
+  <link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
 
@@ -125,41 +125,81 @@
       <!-- 1. DASHBOARD -->
       <section id="dashboard" class="page active">
         <h2>Dashboard</h2>
-        <p class="subtitle">Overview of paint production records</p>
+        <p class="subtitle" id="dashSubtitle">Overview of paint production records</p>
 
         <div class="stats">
-          <div class="card stat-card">
-            <span class="stat-label">Produced Today</span>
+          <div class="card stat-card" id="cardToday" tabindex="0" role="button" title="View today's records">
+            <span class="stat-label" id="todayCardLabel">Produced Today</span>
             <span class="stat-value" id="todayCount">0</span>
             <span class="stat-liters" id="todayLiters">0 L</span>
             <span class="stat-range" id="todayLabel"></span>
+            <span class="stat-link">View records &rarr;</span>
           </div>
 
-          <div class="card stat-card">
-            <span class="stat-label">Produced This Week</span>
+          <div class="card stat-card" id="cardWeek" tabindex="0" role="button" title="View this week's records">
+            <span class="stat-label" id="weekCardLabel">Produced This Week</span>
             <span class="stat-value" id="weekCount">0</span>
             <span class="stat-liters" id="weekLiters">0 L</span>
             <span class="stat-range" id="weekLabel"></span>
+            <span class="stat-link">View records &rarr;</span>
           </div>
 
-          <div class="card stat-card">
-            <span class="stat-label">Produced This Month</span>
+          <div class="card stat-card" id="cardMonth" tabindex="0" role="button" title="View this month's records">
+            <span class="stat-label" id="monthCardLabel">Produced This Month</span>
             <span class="stat-value" id="monthCount">0</span>
             <span class="stat-liters" id="monthLiters">0 L</span>
             <span class="stat-range" id="monthLabel"></span>
+            <span class="stat-link">View records &rarr;</span>
           </div>
 
-          <div class="card stat-card total">
+          <div class="card stat-card total" id="cardTotal" tabindex="0" role="button" title="View all records">
             <span class="stat-label">Total Production Records</span>
             <span class="stat-value" id="totalRecords">0</span>
             <span class="stat-liters" id="totalLiters">0 L</span>
             <span class="stat-range">All time</span>
+            <span class="stat-link">View records &rarr;</span>
+          </div>
+        </div>
+
+        <!-- Most produced paint -->
+        <div class="section-head">
+          <h3 id="topTableTitle">Most Produced Paint</h3>
+          <div class="top-period">
+            <label for="topPeriod">Show:</label>
+            <select id="topPeriod">
+              <option value="all">All Time</option>
+              <option value="month">This Month</option>
+              <option value="week">This Week</option>
+            </select>
+          </div>
+        </div>
+        <div class="card top-paint">
+          <div class="top-highlight" id="topHighlight">
+            <span class="top-label">Most Produced</span>
+            <span class="top-name" id="topName">-</span>
+            <span class="top-detail" id="topDetail">No production yet</span>
+          </div>
+          <div class="list top-list">
+            <table>
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Product Name</th>
+                  <th>Batches</th>
+                  <th>Total Liters</th>
+                  <th class="share-col">Share</th>
+                </tr>
+              </thead>
+              <tbody id="topList">
+                <tr><td colspan="5" class="empty">Loading...</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
         <!-- Today's production list -->
         <div class="section-head">
-          <h3>Today's Production</h3>
+          <h3 id="todayTableTitle">Today's Production</h3>
           <span class="section-note" id="todayTableLabel"></span>
         </div>
         <div class="card list">
@@ -183,7 +223,7 @@
 
         <!-- Recent production list -->
         <div class="section-head">
-          <h3>Recent Production</h3>
+          <h3 id="recentTableTitle">Recent Production</h3>
           <span class="section-note">Latest 5 records</span>
         </div>
         <div class="card list">
@@ -223,7 +263,19 @@
 
             <div class="field">
               <label for="productName">Paint Product Name</label>
-              <input type="text" id="productName" placeholder="e.g. Ultra Gloss Enamel" maxlength="60">
+              <select id="productName">
+                <option value="">-- Select product --</option>
+              </select>
+
+              <!-- shown when "+ Add a new product" is chosen -->
+              <div id="newProductBox" class="new-product hidden">
+                <input type="text" id="newProductName" placeholder="Type the new product name" maxlength="60">
+                <div class="new-product-buttons">
+                  <button id="addProductButton" class="btn-primary">Add Product</button>
+                  <button id="cancelProductButton" class="btn-secondary">Cancel</button>
+                </div>
+                <span class="field-note">You will be asked to confirm the name before it is added to the list.</span>
+              </div>
             </div>
 
             <div class="field">
@@ -280,7 +332,7 @@
       <!-- 3 & 4. VIEW + DELETE RECORDS -->
       <section id="records" class="page">
         <h2>View Records</h2>
-        <p class="subtitle">All saved production records</p>
+        <p class="subtitle" id="recordsSubtitle">All saved production records</p>
 
         <div class="toolbar">
           <div class="filter">
@@ -294,7 +346,41 @@
             </div>
             <button id="showAllButton" class="btn-secondary">Show All</button>
           </div>
-          <button id="pdfButton" class="btn-primary">Download PDF</button>
+          <div id="downloadButtons" class="download-buttons">
+            <button id="pdfButton" class="btn-primary">Download PDF</button>
+            <button id="excelButton" class="btn-excel">Download Excel</button>
+          </div>
+        </div>
+
+        <!-- search, filters and sorting -->
+        <div class="filter-row">
+          <div class="filter-field search-field">
+            <label for="batchSearch">Search Batch No.</label>
+            <input type="text" id="batchSearch" placeholder="e.g. 025 or BATCH-025" maxlength="30">
+          </div>
+          <div class="filter-field" id="producerFilterField">
+            <label for="producerFilter">Produced By</label>
+            <select id="producerFilter">
+              <option value="">All employees</option>
+            </select>
+          </div>
+          <div class="filter-field">
+            <label for="productFilter">Product</label>
+            <select id="productFilter">
+              <option value="">All products</option>
+            </select>
+          </div>
+          <div class="filter-field">
+            <label for="sortBy">Sort By</label>
+            <select id="sortBy">
+              <option value="newest">Newest date first</option>
+              <option value="oldest">Oldest date first</option>
+              <option value="product">Product (A to Z)</option>
+              <option value="producer">Produced By (A to Z)</option>
+              <option value="qtyHigh">Quantity (highest first)</option>
+              <option value="batch">Batch No. (newest first)</option>
+            </select>
+          </div>
         </div>
 
         <p id="filterInfo" class="filter-info">Showing all records</p>
@@ -512,7 +598,9 @@
   <!-- PDF libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <!-- Excel library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-  <script type="module" src="script.js?v=15"></script>
+  <script type="module" src="script.js?v=23"></script>
 </body>
 </html>

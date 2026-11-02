@@ -165,6 +165,26 @@ h2 { font-size: 26px; margin-bottom: 4px; color: #0b1f4f; }
 
 .stat-card.total { border-left-color: #0b1f4f; }
 
+/* cards open View Records with their dates */
+.stat-card {
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.stat-card:hover,
+.stat-card:focus {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(11, 31, 79, 0.12);
+  outline: none;
+}
+
+.stat-link {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0b1f4f;
+}
+
 .stat-label { color: #747d8c; font-size: 14px; }
 .stat-value { font-size: 44px; font-weight: 700; color: #0b1f4f; }
 .stat-liters { font-size: 15px; font-weight: 600; color: #f59e0b; }
@@ -220,6 +240,22 @@ input[readonly] {
 }
 
 .field-note { font-size: 12px; color: #747d8c; }
+
+/* new product box under the product dropdown */
+.new-product {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 12px;
+  border: 1px dashed #f59e0b;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.new-product-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.new-product-buttons .btn-primary,
+.new-product-buttons .btn-secondary { padding: 8px 16px; font-size: 14px; }
 
 input:focus, select:focus {
   outline: none;
@@ -287,6 +323,26 @@ input:focus, select:focus {
   color: #747d8c;
   font-size: 14px;
   margin-bottom: 12px;
+}
+
+/* search, filters and sorting under the date filter */
+.filter-row {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.filter-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.filter-field label { font-size: 13px; }
+.filter-field input, .filter-field select { width: 100%; }
+
+@media (max-width: 1024px) {
+  .filter-row { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 768px) {
+  .filter-row { grid-template-columns: 1fr; }
 }
 
 /* ---------- Records table ---------- */
@@ -533,3 +589,45 @@ input[type="file"] {
 
 .locked { font-size: 12px; color: #a4b0be; }
 .btn-small { padding: 6px 12px; font-size: 13px; margin-left: 6px; }
+
+
+/* ===== DOWNLOAD BUTTONS ===== */
+.download-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-excel {
+    background: #1d6f42; color: #ffffff; border: none; border-radius: 8px;
+    padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.btn-excel:hover { background: #155232; }
+
+/* ===== MOST PRODUCED PAINT ===== */
+.top-period { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #747d8c; }
+.top-period select { padding: 6px 10px; border: 1px solid #d5dae3; border-radius: 6px; font-size: 13px; }
+.top-paint { display: grid; grid-template-columns: 240px 1fr; gap: 0; padding: 0; overflow: hidden; }
+.top-highlight {
+    background: #0b1f4f; color: #ffffff; padding: 24px;
+    display: flex; flex-direction: column; justify-content: center; gap: 6px;
+}
+.top-label { font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #f59e0b; }
+.top-name { font-size: 22px; font-weight: 700; line-height: 1.2; word-break: break-word; }
+.top-detail { font-size: 13px; color: #c9d2e6; }
+.top-list { border-radius: 0; box-shadow: none; }
+.rank { display: inline-block; min-width: 26px; text-align: center; font-weight: 700; color: #0b1f4f; }
+.rank.first { background: #f59e0b; color: #0b1f4f; border-radius: 12px; padding: 2px 6px; }
+.share-bar { display: flex; align-items: center; gap: 8px; min-width: 140px; }
+.share-track { flex: 1; height: 8px; background: #eef1f6; border-radius: 4px; overflow: hidden; }
+.share-fill { display: block; height: 100%; background: #f59e0b; border-radius: 4px; }
+.share-text { font-size: 12px; color: #747d8c; min-width: 36px; text-align: right; }
+
+@media (max-width: 768px) {
+    .top-paint { grid-template-columns: 1fr; }
+    .top-highlight { padding: 18px; }
+    .download-buttons { width: 100%; }
+    .download-buttons button { flex: 1; }
+}
+
+/* ===== BEING EDITED TAG ===== */
+.editing-tag {
+    display: table; margin: 0 0 6px 0; padding: 3px 8px; white-space: nowrap;
+    font-size: 12px; font-weight: 700; color: #92400e;
+    background: #fef3c7; border: 1px solid #f59e0b; border-radius: 12px;
+}
